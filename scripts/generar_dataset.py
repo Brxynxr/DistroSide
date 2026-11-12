@@ -298,48 +298,65 @@ def generar_dia(fecha: str | date, seed_base: int = 1000) -> pd.DataFrame:
 def cargar_bronze(
     df: pd.DataFrame,
     modo: Literal["replace", "append"] = "replace",
+    conn=None,
+    prefijo_idempotente: str | None = None,
 ) -> tuple[bool, int, int]:
     """Carga un DataFrame a DATAFINANCE.BRONZE.TRANSACCIONES en Snowflake."""
     import snowflake.connector
     from snowflake.connector.pandas_tools import write_pandas
 
-    load_dotenv()
+    debe_cerrar = conn is None
+    database = os.getenv("SNOWFLAKE_DATABASE", "DATAFINANCE")
+    schema = os.getenv("SNOWFLAKE_SCHEMA", "BRONZE")
 
-    required = ["SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD"]
-    faltantes = [var for var in required if not os.getenv(var)]
-    if faltantes:
-        raise EnvironmentError(
-            f"Faltan variables de entorno en .env: {', '.join(faltantes)}"
+    if conn is None:
+        load_dotenv(override=True)
+        required = ["SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD"]
+        faltantes = [var for var in required if not os.getenv(var)]
+        if faltantes:
+            raise EnvironmentError(
+                f"Faltan variables de entorno en .env: {', '.join(faltantes)}"
+            )
+
+        conn = snowflake.connector.connect(
+            account=os.environ["SNOWFLAKE_ACCOUNT"],
+            user=os.environ["SNOWFLAKE_USER"],
+            password=os.environ["SNOWFLAKE_PASSWORD"],
+            role=os.getenv("SNOWFLAKE_ROLE", "ROL_DATAFINANCE"),
+            warehouse=os.getenv("SNOWFLAKE_WAREHOUSE", "WH_DATAFINANCE"),
+            database=database,
+            schema=schema,
         )
-
-    conn = snowflake.connector.connect(
-        account=os.environ["SNOWFLAKE_ACCOUNT"],
-        user=os.environ["SNOWFLAKE_USER"],
-        password=os.environ["SNOWFLAKE_PASSWORD"],
-        role=os.getenv("SNOWFLAKE_ROLE", "ROL_DATAFINANCE"),
-        warehouse=os.getenv("SNOWFLAKE_WAREHOUSE", "WH_DATAFINANCE"),
-        database=os.getenv("SNOWFLAKE_DATABASE", "DATAFINANCE"),
-        schema=os.getenv("SNOWFLAKE_SCHEMA", "BRONZE"),
-    )
 
     try:
         df_subida = df.copy()
         df_subida.columns = [c.upper() for c in df_subida.columns]
+
+        if modo == "append" and prefijo_idempotente:
+            cur = conn.cursor()
+            try:
+                cur.execute(
+                    f"DELETE FROM {database}.{schema}.TRANSACCIONES WHERE ID_TRANSACCION LIKE %s",
+                    (f"{prefijo_idempotente}%",),
+                )
+            finally:
+                cur.close()
 
         overwrite = modo == "replace"
         success, nchunks, nrows, _ = write_pandas(
             conn=conn,
             df=df_subida,
             table_name="TRANSACCIONES",
-            database=os.getenv("SNOWFLAKE_DATABASE", "DATAFINANCE"),
-            schema=os.getenv("SNOWFLAKE_SCHEMA", "BRONZE"),
+            database=database,
+            schema=schema,
             auto_create_table=True,
             overwrite=overwrite,
             quote_identifiers=False,
         )
         return bool(success), int(nchunks), int(nrows)
     finally:
-        conn.close()
+        if debe_cerrar:
+            conn.close()
 
 
 def imprimir_resumen_validacion(df: pd.DataFrame) -> None:
@@ -433,9 +450,11 @@ def main() -> None:
     if args.modo == "historico":
         df = generar_historico()
         modo_carga: Literal["replace", "append"] = "replace"
+        prefijo_dia = None
     else:
         df = generar_dia(args.fecha)
         modo_carga = "append"
+        prefijo_dia = f"T-{args.fecha.replace('-', '')}-"
 
     imprimir_resumen_validacion(df)
 
@@ -446,7 +465,11 @@ def main() -> None:
         print(f"\nCSV guardado en: {ruta}")
 
     if args.subir:
-        ok, nchunks, nrows = cargar_bronze(df, modo=modo_carga)
+        ok, nchunks, nrows = cargar_bronze(
+            df,
+            modo=modo_carga,
+            prefijo_idempotente=prefijo_dia,
+        )
         print(
             f"\nCarga a Snowflake ({modo_carga}) -> success={ok}, chunks={nchunks}, rows={nrows}"
         )

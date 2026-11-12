@@ -1,0 +1,6 @@
+apache-airflow-providers-snowflake
+apache-airflow-providers-common-sql
+snowflake-connector-python[pandas]
+python-dotenv
+pandas
+numpy

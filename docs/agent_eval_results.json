@@ -1,0 +1,150 @@
+{
+  "total": 16,
+  "passed": 14,
+  "results": [
+    {
+      "id": "Q01",
+      "passed": true,
+      "sql_ok": true,
+      "tokens_ok": true,
+      "num_ok": true,
+      "row_count": 1,
+      "sql": "SELECT INGRESOS, GASTOS FROM DATAFINANCE.GOLD.KPI_MENSUAL WHERE ANIO_MES = '2026-03'\nLIMIT 200"
+    },
+    {
+      "id": "Q02",
+      "passed": false,
+      "sql_ok": true,
+      "tokens_ok": false,
+      "num_ok": true,
+      "row_count": 1,
+      "sql": "SELECT ANIO, NUMERO_MES, INGRESOS, GASTOS, UTILIDAD FROM DATAFINANCE.GOLD.KPI_MENSUAL WHERE ANIO = 2026 AND NUMERO_MES = 6\nLIMIT 200"
+    },
+    {
+      "id": "Q03",
+      "passed": true,
+      "sql_ok": true,
+      "tokens_ok": true,
+      "num_ok": true,
+      "row_count": 1,
+      "sql": "SELECT SUM(IFF(ANIO = 2026 AND NUMERO_MES = 6, UTILIDAD, 0)) AS UTILIDAD_JUNIO, SUM(IFF(ANIO = 2026 AND NUMERO_MES = 5, UTILIDAD, 0)) AS UTILIDAD_MAYO, SUM(IFF(ANIO = 2026 AND NUMERO_MES = 6, UTILIDAD, 0)) - SUM(IFF(ANIO = 2026 AND NUMERO_MES = 5, UTILIDAD, 0)) AS DIFERENCIA_ABSOLUTA, CASE WHEN SUM(IFF(ANIO = 2026 AND NUMERO_MES = 5, UTILIDAD, 0)) <> 0 THEN (SUM(IFF(ANIO = 2026 AND NUMERO_MES = 6, UTILIDAD, 0)) - SUM(IFF(ANIO = 2026 AND NUMERO_MES = 5, UTILIDAD, 0))) / SUM(IFF(ANIO = 2026 AND NUMERO_MES = 5, UTILIDAD, 0)) * 100 END AS DIFERENCIA_PCT FROM DATAFINANCE.GOLD.KPI_MENSUAL WHERE ANIO = 2026 AND NUMERO_MES IN (5,6)\nLIMIT 200"
+    },
+    {
+      "id": "Q04",
+      "passed": true,
+      "sql_ok": true,
+      "tokens_ok": true,
+      "num_ok": true,
+      "row_count": 1,
+      "sql": "SELECT CATEGORIA, SUM(MONTO_TOTAL) AS TOTAL_GASTO_2026 FROM DATAFINANCE.GOLD.KPI_CATEGORIA_MENSUAL WHERE ANIO = 2026 AND TIPO = 'GASTO' GROUP BY CATEGORIA ORDER BY TOTAL_GASTO_2026 DESC LIMIT 1"
+    },
+    {
+      "id": "Q05",
+      "passed": true,
+      "sql_ok": true,
+      "tokens_ok": true,
+      "num_ok": true,
+      "row_count": 1,
+      "sql": "SELECT AREA, SUM(MONTO_TOTAL) AS GASTO_TOTAL_2025 FROM DATAFINANCE.GOLD.KPI_AREA_MENSUAL WHERE ANIO = 2025 AND TIPO = 'GASTO' GROUP BY AREA ORDER BY GASTO_TOTAL_2025 DESC LIMIT 1"
+    },
+    {
+      "id": "Q06",
+      "passed": true,
+      "sql_ok": true,
+      "tokens_ok": true,
+      "num_ok": true,
+      "row_count": 1,
+      "sql": "SELECT SUM(MONTO_TOTAL) AS GASTO_MARKETING_MARZO_2026 FROM DATAFINANCE.GOLD.KPI_CATEGORIA_MENSUAL WHERE ANIO = 2026 AND NUMERO_MES = 3 AND TIPO = 'GASTO' AND CATEGORIA = 'MARKETING'\nLIMIT 200"
+    },
+    {
+      "id": "Q07",
+      "passed": true,
+      "sql_ok": true,
+      "tokens_ok": true,
+      "num_ok": true,
+      "row_count": 1,
+      "sql": "SELECT MONTO_TOTAL AS GASTO_LOGISTICA_AGOSTO_2026 FROM DATAFINANCE.GOLD.KPI_CATEGORIA_MENSUAL WHERE ANIO = 2026 AND NUMERO_MES = 8 AND TIPO = 'GASTO' AND CATEGORIA = 'LOGISTICA'\nLIMIT 200"
+    },
+    {
+      "id": "Q08",
+      "passed": true,
+      "sql_ok": true,
+      "tokens_ok": true,
+      "num_ok": true,
+      "row_count": 10,
+      "sql": "SELECT MES, ANIO_MES, NIVEL, TIPO, CATEGORIA, TIPO_ANOMALIA, MOTIVO, VALOR_OBSERVADO, VALOR_ESPERADO, Z_SCORE FROM DATAFINANCE.GOLD.ANOMALIAS ORDER BY MES\nLIMIT 200"
+    },
+    {
+      "id": "Q09",
+      "passed": true,
+      "sql_ok": true,
+      "tokens_ok": true,
+      "num_ok": true,
+      "row_count": 1,
+      "sql": "SELECT SUM(IFF(NUMERO_MES BETWEEN 1 AND 6, INGRESOS, 0)) AS INGRESOS_PRIMER_SEMESTRE, SUM(IFF(NUMERO_MES BETWEEN 1 AND 6, GASTOS, 0)) AS GASTOS_PRIMER_SEMESTRE, SUM(IFF(NUMERO_MES BETWEEN 7 AND 12, INGRESOS, 0)) AS INGRESOS_SEGUNDO_SEMESTRE, SUM(IFF(NUMERO_MES BETWEEN 7 AND 12, GASTOS, 0)) AS GASTOS_SEGUNDO_SEMESTRE FROM DATAFINANCE.GOLD.KPI_MENSUAL WHERE ANIO = 2026\nLIMIT 200"
+    },
+    {
+      "id": "Q10",
+      "passed": true,
+      "sql_ok": true,
+      "tokens_ok": true,
+      "num_ok": true,
+      "row_count": 1,
+      "sql": "SELECT ANIO_MES, MARGEN_PCT FROM DATAFINANCE.GOLD.KPI_MENSUAL WHERE ANIO = 2026 ORDER BY MARGEN_PCT ASC LIMIT 1"
+    },
+    {
+      "id": "Q11",
+      "passed": true,
+      "sql_ok": true,
+      "tokens_ok": true,
+      "num_ok": true,
+      "row_count": 1,
+      "sql": "SELECT SUM(MONTO_TOTAL) AS TOTAL_INGRESOS_VENTA_CONTADO_2025 FROM DATAFINANCE.GOLD.KPI_CATEGORIA_MENSUAL WHERE ANIO = 2025 AND TIPO = 'INGRESO' AND CATEGORIA = 'VENTA CONTADO'\nLIMIT 200"
+    },
+    {
+      "id": "Q12",
+      "passed": true,
+      "sql_ok": true,
+      "tokens_ok": true,
+      "num_ok": true,
+      "row_count": 1,
+      "sql": "SELECT SUM(MONTO_TOTAL) AS TOTAL_NOMINA_Q1_2026 FROM DATAFINANCE.GOLD.KPI_CATEGORIA_MENSUAL WHERE ANIO = 2026 AND NUMERO_MES IN (1,2,3) AND TIPO = 'GASTO' AND CATEGORIA = 'NOMINA'\nLIMIT 200"
+    },
+    {
+      "id": "Q13",
+      "passed": true,
+      "sql_ok": true,
+      "tokens_ok": true,
+      "num_ok": true,
+      "row_count": 2,
+      "sql": "SELECT MOTIVO_RECHAZO, COUNT(*) AS CANTIDAD FROM DATAFINANCE.SILVER.TRANSACCIONES_RECHAZADOS GROUP BY MOTIVO_RECHAZO ORDER BY CANTIDAD DESC\nLIMIT 200"
+    },
+    {
+      "id": "Q14",
+      "passed": false,
+      "sql_ok": true,
+      "tokens_ok": false,
+      "num_ok": true,
+      "row_count": 1,
+      "sql": "SELECT COUNT(*) AS TOTAL_TRANSACCIONES FROM DATAFINANCE.SILVER.TRANSACCIONES WHERE ANIO = 2025 AND MONTH(FECHA) = 12\nLIMIT 200"
+    },
+    {
+      "id": "Q15",
+      "passed": true,
+      "sql_ok": true,
+      "tokens_ok": true,
+      "num_ok": true,
+      "row_count": 1,
+      "sql": "SELECT SUM(MONTO_TOTAL) AS INGRESOS_ADMINISTRACION FROM DATAFINANCE.GOLD.KPI_AREA_MENSUAL WHERE TIPO='INGRESO' AND AREA='ADMINISTRACIÓN'\nLIMIT 200"
+    },
+    {
+      "id": "Q16",
+      "passed": true,
+      "sql_ok": true,
+      "tokens_ok": true,
+      "num_ok": true,
+      "row_count": 0,
+      "sql": "SELECT INGRESOS FROM DATAFINANCE.GOLD.KPI_MENSUAL WHERE ANIO = 2020 AND NUMERO_MES = 1\nLIMIT 200"
+    }
+  ]
+}

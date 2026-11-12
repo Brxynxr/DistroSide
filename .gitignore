@@ -17,3 +17,7 @@ airflow/logs/
 airflow/*.pid
 airflow/*.err
 airflow/*.log
+
+# Frontend React / Vite
+frontend/node_modules/
+frontend/dist/
