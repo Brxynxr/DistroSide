@@ -1,0 +1,19 @@
+# Entorno y credenciales
+.env
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Datos locales generados (se regeneran con scripts/generar_dataset.py)
+data/
+
+# Airflow local
+airflow/logs/
+airflow/*.pid
+airflow/*.err
+airflow/*.log
