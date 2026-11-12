@@ -2,10 +2,9 @@ import { memo, useEffect, useRef } from "react";
 import Plotly from "plotly.js-dist-min";
 
 /**
- * Wrapper memorizado de Plotly.js con dimensiones reservadas para evitar CLS
- * y estilos sincronizados con MASTER.md.
+ * Wrapper memorizado de Plotly.js adaptado a estética minimalista SaaS (Inter, ejes discretos, sin ruido).
  */
-function PlotlyChart({ data, layout, config, heightClass = "h-[340px] min-h-[320px]", loading = false }) {
+function PlotlyChart({ data, layout, config, heightClass = "h-[330px] min-h-[300px]", loading = false }) {
   const containerRef = useRef(null);
 
   useEffect(() => {
@@ -16,21 +15,23 @@ function PlotlyChart({ data, layout, config, heightClass = "h-[340px] min-h-[320
       autosize: true,
       paper_bgcolor: "transparent",
       plot_bgcolor: "transparent",
-      font: { family: "Fira Sans, system-ui, sans-serif", color: "#475569", size: 12 },
-      margin: { t: 24, r: 16, b: 44, l: 60 },
+      font: { family: "Inter, system-ui, sans-serif", color: "#64748B", size: 12 },
+      margin: { t: 24, r: 16, b: 40, l: 56 },
       hoverlabel: {
         bgcolor: "#0F172A",
-        bordercolor: "#1E40AF",
-        font: { family: "Fira Code, monospace", color: "#FFFFFF", size: 12 },
+        bordercolor: "#1E293B",
+        font: { family: "Inter, system-ui, sans-serif", color: "#FFFFFF", size: 12 },
       },
       xaxis: {
-        gridcolor: "#E2E8F0",
-        zerolinecolor: "#CBD5E1",
+        gridcolor: "#F1F5F9",
+        zerolinecolor: "#E2E8F0",
+        tickfont: { color: "#64748B", size: 11 },
         ...(layout?.xaxis || {}),
       },
       yaxis: {
-        gridcolor: "#E2E8F0",
-        zerolinecolor: "#CBD5E1",
+        gridcolor: "#F1F5F9",
+        zerolinecolor: "#E2E8F0",
+        tickfont: { color: "#64748B", size: 11 },
         ...(layout?.yaxis || {}),
       },
       ...layout,
@@ -38,15 +39,17 @@ function PlotlyChart({ data, layout, config, heightClass = "h-[340px] min-h-[320
 
     if (layout?.xaxis) {
       mergedLayout.xaxis = {
-        gridcolor: "#E2E8F0",
-        zerolinecolor: "#CBD5E1",
+        gridcolor: "#F1F5F9",
+        zerolinecolor: "#E2E8F0",
+        tickfont: { color: "#64748B", size: 11 },
         ...layout.xaxis,
       };
     }
     if (layout?.yaxis) {
       mergedLayout.yaxis = {
-        gridcolor: "#E2E8F0",
-        zerolinecolor: "#CBD5E1",
+        gridcolor: "#F1F5F9",
+        zerolinecolor: "#E2E8F0",
+        tickfont: { color: "#64748B", size: 11 },
         ...layout.yaxis,
       };
     }

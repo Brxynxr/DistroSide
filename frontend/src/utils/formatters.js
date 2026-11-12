@@ -1,23 +1,23 @@
 /**
- * Formateadores financieros (COP) y paleta compartida para Plotly.js.
+ * Formateadores financieros (COP) y paleta compartida para Plotly.js (Stripe/Linear/Ramp).
  */
 
 export const PLOTLY_SERIES = {
   ingresos: "#059669",
   gastos: "#DC2626",
-  utilidad: "#1E40AF",
-  secundario: "#3B82F6",
+  utilidad: "#2563EB",
+  secundario: "#172554",
   alerta: "#D97706",
 };
 
 export const PLOTLY_CATEGORICAL = [
-  "#1E40AF",
+  "#2563EB",
   "#059669",
   "#D97706",
-  "#3B82F6",
+  "#172554",
   "#64748B",
   "#DC2626",
-  "#0D9488",
+  "#0EA5E9",
 ];
 
 export function formatCOP(valor) {

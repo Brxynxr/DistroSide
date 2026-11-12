@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 from typing import Any
 
 import httpx
@@ -46,6 +48,42 @@ class ReporteFiltradoRequest(BaseModel):
     categoria: str | None = None
     area: str | None = None
     incluir_parcial: bool = False
+
+
+_CACHE_LOCK = threading.Lock()
+_CACHE_STORE: dict[str, tuple[float, Any]] = {}
+_CACHE_TTL_SEC = 120.0
+_FILTROS_TTL_SEC = 300.0
+
+
+def _cache_get(key: str, ttl: float) -> Any | None:
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return None
+    with _CACHE_LOCK:
+        entry = _CACHE_STORE.get(key)
+        if not entry:
+            return None
+        ts, val = entry
+        if (time.monotonic() - ts) > ttl:
+            _CACHE_STORE.pop(key, None)
+            return None
+        return val
+
+
+def _cache_set(key: str, val: Any) -> None:
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return
+    with _CACHE_LOCK:
+        _CACHE_STORE[key] = (time.monotonic(), val)
+
+
+def _cache_clear(prefix: str | None = None) -> None:
+    with _CACHE_LOCK:
+        if prefix is None:
+            _CACHE_STORE.clear()
+        else:
+            for k in [k for k in _CACHE_STORE if k.startswith(prefix)]:
+                _CACHE_STORE.pop(k, None)
 
 
 def _construir_filtros_silver(
@@ -104,6 +142,26 @@ def health() -> dict[str, Any]:
     }
 
 
+def _obtener_filtros_disponibles() -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    cached = _cache_get("filtros_disponibles", _FILTROS_TTL_SEC)
+    if cached:
+        return cached["meses"], cached["categorias"], cached["areas"]
+
+    _, opts_meses = query_dicts(
+        "SELECT ANIO_MES, "
+        "EXISTS (SELECT 1 FROM DATAFINANCE.SILVER.TRANSACCIONES s WHERE s.MES = k.MES HAVING DAY(MAX(s.FECHA)) >= 28) AS ES_COMPLETO "
+        "FROM DATAFINANCE.GOLD.KPI_MENSUAL k ORDER BY MES"
+    )
+    _, opts_cats = query_dicts(
+        "SELECT DISTINCT CATEGORIA, TIPO FROM DATAFINANCE.GOLD.KPI_CATEGORIA_MENSUAL ORDER BY TIPO, CATEGORIA"
+    )
+    _, opts_areas = query_dicts(
+        "SELECT DISTINCT AREA FROM DATAFINANCE.GOLD.KPI_AREA_MENSUAL ORDER BY AREA"
+    )
+    _cache_set("filtros_disponibles", {"meses": opts_meses, "categorias": opts_cats, "areas": opts_areas})
+    return opts_meses, opts_cats, opts_areas
+
+
 @app.get("/api/kpis")
 def obtener_kpis(
     fecha_inicio: str | None = Query(default=None),
@@ -111,19 +169,16 @@ def obtener_kpis(
     categoria: str | None = Query(default=None),
     area: str | None = Query(default=None),
     incluir_parcial: bool = Query(default=False),
+    nocache: bool = Query(default=False),
 ) -> dict[str, Any]:
+    cache_key = f"kpis:{fecha_inicio}:{fecha_fin}:{categoria}:{area}:{incluir_parcial}"
+    if not nocache:
+        cached = _cache_get(cache_key, _CACHE_TTL_SEC)
+        if cached is not None:
+            return cached
+
     try:
-        _, opts_meses = query_dicts(
-            "SELECT ANIO_MES, "
-            "EXISTS (SELECT 1 FROM DATAFINANCE.SILVER.TRANSACCIONES s WHERE s.MES = k.MES HAVING DAY(MAX(s.FECHA)) >= 28) AS ES_COMPLETO "
-            "FROM DATAFINANCE.GOLD.KPI_MENSUAL k ORDER BY MES"
-        )
-        _, opts_cats = query_dicts(
-            "SELECT DISTINCT CATEGORIA, TIPO FROM DATAFINANCE.GOLD.KPI_CATEGORIA_MENSUAL ORDER BY TIPO, CATEGORIA"
-        )
-        _, opts_areas = query_dicts(
-            "SELECT DISTINCT AREA FROM DATAFINANCE.GOLD.KPI_AREA_MENSUAL ORDER BY AREA"
-        )
+        opts_meses, opts_cats, opts_areas = _obtener_filtros_disponibles()
 
         usa_filtro_granular = bool(
             (categoria and categoria != "TODAS") or (area and area != "TODAS")
@@ -280,7 +335,7 @@ def obtener_kpis(
         tx_tot = sum(int(r["TOTAL_TRANSACCIONES"]) for r in mensual)
         actualizado = mensual[-1]["ACTUALIZADO_EN"] if mensual else None
 
-        return {
+        resultado = {
             "resumen": {
                 "ingresos_totales": ingresos_tot,
                 "gastos_totales": gastos_tot,
@@ -300,12 +355,18 @@ def obtener_kpis(
                 "areas": [a["AREA"] for a in opts_areas],
             },
         }
+        _cache_set(cache_key, resultado)
+        return resultado
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get("/api/anomalias")
-def obtener_anomalias() -> dict[str, Any]:
+def obtener_anomalias(nocache: bool = Query(default=False)) -> dict[str, Any]:
+    if not nocache:
+        cached = _cache_get("anomalias", _CACHE_TTL_SEC)
+        if cached is not None:
+            return cached
     try:
         _, rows = query_dicts(
             """
@@ -324,13 +385,19 @@ def obtener_anomalias() -> dict[str, Any]:
             ORDER BY MES DESC, ABS(Z_SCORE) DESC
             """
         )
-        return {"anomalias": rows, "total": len(rows)}
+        res = {"anomalias": rows, "total": len(rows)}
+        _cache_set("anomalias", res)
+        return res
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get("/api/auditoria")
-def obtener_auditoria() -> dict[str, Any]:
+def obtener_auditoria(nocache: bool = Query(default=False)) -> dict[str, Any]:
+    if not nocache:
+        cached = _cache_get("auditoria", _CACHE_TTL_SEC)
+        if cached is not None:
+            return cached
     try:
         _, conteos = query_dicts(
             """
@@ -348,16 +415,22 @@ def obtener_auditoria() -> dict[str, Any]:
             ORDER BY CANTIDAD DESC
             """
         )
-        return {
+        res = {
             "conteos": conteos[0] if conteos else {},
             "motivos_rechazo": motivos,
         }
+        _cache_set("auditoria", res)
+        return res
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get("/api/reportes")
-def obtener_reportes() -> dict[str, Any]:
+def obtener_reportes(nocache: bool = Query(default=False)) -> dict[str, Any]:
+    if not nocache:
+        cached = _cache_get("reportes", _CACHE_TTL_SEC)
+        if cached is not None:
+            return cached
     try:
         _, rows = query_dicts(
             """
@@ -373,7 +446,9 @@ def obtener_reportes() -> dict[str, Any]:
             LIMIT 20
             """
         )
-        return {"reportes": rows}
+        res = {"reportes": rows}
+        _cache_set("reportes", res)
+        return res
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -398,6 +473,7 @@ async def disparar_reporte_airflow() -> dict[str, Any]:
                 detail=f"Airflow respondió {resp.status_code}: {resp.text}",
             )
         data = resp.json()
+        _cache_clear("reportes")
         return {
             "dag_run_id": data.get("dag_run_id"),
             "state": data.get("state"),

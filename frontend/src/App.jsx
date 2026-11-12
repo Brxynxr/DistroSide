@@ -1,22 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
-import { Menu, RefreshCw } from "lucide-react";
+import { Calendar, Coins, Clock, Database, Menu, RefreshCw } from "lucide-react";
 import GlobalFilters from "./components/GlobalFilters.jsx";
 import Sidebar from "./components/Sidebar.jsx";
-import SourceBadge from "./components/SourceBadge.jsx";
+import AlertBanner from "./components/ui/AlertBanner.jsx";
+import Badge from "./components/ui/Badge.jsx";
+import Button from "./components/ui/Button.jsx";
+import Tooltip from "./components/ui/Tooltip.jsx";
 import AnalystView from "./views/AnalystView.jsx";
 import AnomaliesView from "./views/AnomaliesView.jsx";
 import DashboardView from "./views/DashboardView.jsx";
 import ReportsView from "./views/ReportsView.jsx";
 
 const TAB_TITLES = {
-  dashboard: "Panel Financiero (COP)",
-  chat: "Consultas en Lenguaje Natural",
-  anomalias: "Detección de Anomalías",
+  dashboard: "Resumen Financiero",
+  chat: "Agente Analista",
+  anomalias: "Monitor de Anomalías",
   reportes: "Reportes Ejecutivos",
 };
 
 export default function App() {
   const [tab, setTab] = useState("dashboard");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [health, setHealth] = useState(null);
 
@@ -56,33 +60,38 @@ export default function App() {
     }
   }, []);
 
-  const cargarKpis = useCallback(async () => {
-    setLoadingKpis(true);
-    setErrorGlobal("");
-    try {
-      const params = new URLSearchParams();
-      if (fechaInicio) params.set("fecha_inicio", fechaInicio);
-      if (fechaFin) params.set("fecha_fin", fechaFin);
-      if (categoria && categoria !== "TODAS") params.set("categoria", categoria);
-      if (area && area !== "TODAS") params.set("area", area);
-      params.set("incluir_parcial", String(incluirParcial));
+  const cargarKpis = useCallback(
+    async (nocache = false) => {
+      setLoadingKpis(true);
+      setErrorGlobal("");
+      try {
+        const params = new URLSearchParams();
+        if (fechaInicio) params.set("fecha_inicio", fechaInicio);
+        if (fechaFin) params.set("fecha_fin", fechaFin);
+        if (categoria && categoria !== "TODAS") params.set("categoria", categoria);
+        if (area && area !== "TODAS") params.set("area", area);
+        params.set("incluir_parcial", String(incluirParcial));
+        if (nocache) params.set("nocache", "true");
 
-      const res = await fetch(`/api/kpis?${params.toString()}`);
-      if (!res.ok) throw new Error(await res.text());
-      setKpis(await res.json());
-    } catch (err) {
-      setErrorGlobal(`Error cargando KPIs desde Snowflake: ${err.message}`);
-    } finally {
-      setLoadingKpis(false);
-    }
-  }, [fechaInicio, fechaFin, categoria, area, incluirParcial]);
+        const res = await fetch(`/api/kpis?${params.toString()}`);
+        if (!res.ok) throw new Error(await res.text());
+        setKpis(await res.json());
+      } catch (err) {
+        setErrorGlobal(`Error cargando KPIs desde Snowflake: ${err.message}`);
+      } finally {
+        setLoadingKpis(false);
+      }
+    },
+    [fechaInicio, fechaFin, categoria, area, incluirParcial]
+  );
 
-  const cargarSecundarios = useCallback(async () => {
+  const cargarSecundarios = useCallback(async (nocache = false) => {
+    const qs = nocache ? "?nocache=true" : "";
     try {
       const [resAnom, resAud, resRep] = await Promise.all([
-        fetch("/api/anomalias"),
-        fetch("/api/auditoria"),
-        fetch("/api/reportes"),
+        fetch(`/api/anomalias${qs}`),
+        fetch(`/api/auditoria${qs}`),
+        fetch(`/api/reportes${qs}`),
       ]);
       if (resAnom.ok) {
         const dataAnom = await resAnom.json();
@@ -145,7 +154,7 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "No se pudo disparar Airflow");
       setMsgReporte(`${data.mensaje} (Run: ${data.dag_run_id})`);
-      setTimeout(() => cargarSecundarios(), 8000);
+      setTimeout(() => cargarSecundarios(true), 8000);
     } catch (err) {
       setMsgReporte(`Error: ${err.message}`);
     } finally {
@@ -185,6 +194,18 @@ export default function App() {
   );
   const areasDisponibles = kpis?.filtros_disponibles?.areas || [];
 
+  const periodoTexto =
+    resumen.periodo_desde && resumen.periodo_hasta
+      ? `${resumen.periodo_desde} → ${resumen.periodo_hasta}`
+      : "—";
+
+  const actualizadoTexto = resumen.actualizado_en
+    ? new Date(resumen.actualizado_en).toLocaleString("es-CO", {
+        dateStyle: "short",
+        timeStyle: "short",
+      })
+    : "—";
+
   return (
     <div className="min-h-screen flex bg-background text-ink">
       <Sidebar
@@ -192,90 +213,92 @@ export default function App() {
         onSelectTab={setTab}
         anomalyCount={anomalias.length}
         health={health}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
         mobileOpen={mobileMenuOpen}
         onCloseMobile={() => setMobileMenuOpen(false)}
       />
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="sticky top-0 z-header bg-card/95 backdrop-blur-xs border-b border-border px-4 lg:px-6 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-start gap-3">
+        {/* Header Principal Compacto, Elegante y Limpio */}
+        <header className="sticky top-0 z-header bg-card/90 backdrop-blur-md border-b border-border/80 px-4 sm:px-6 py-3.5 shadow-xs">
+          <div className="max-w-[1380px] mx-auto flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-3 min-w-0">
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(true)}
-                className="lg:hidden mt-0.5 rounded-lg border border-border bg-card p-2 text-foreground cursor-pointer hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+                className="lg:hidden mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-ink hover:bg-muted cursor-pointer focus-visible:outline-2 focus-visible:outline-primary shadow-xs"
                 aria-label="Abrir menú de navegación"
               >
                 <Menu className="w-4 h-4" />
               </button>
 
-              <div>
-                <h1 className="font-sans text-lg font-bold tracking-tight text-foreground">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">
+                  <span>Plataforma Financiera</span>
+                  <span className="text-slate-300">/</span>
+                  <span className="text-primary font-semibold">Distribuidora del Caribe</span>
+                </div>
+                <h1 className="text-[23px] leading-tight font-bold tracking-tight text-ink">
                   {TAB_TITLES[tab]}
                 </h1>
-                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                  <SourceBadge variant="sql" showIcon>
-                    Periodo:{" "}
-                    {resumen.periodo_desde && resumen.periodo_hasta
-                      ? `${resumen.periodo_desde} → ${resumen.periodo_hasta}`
-                      : "—"}
-                  </SourceBadge>
-                  <SourceBadge variant="sql">Moneda: COP</SourceBadge>
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  <Badge variant="neutral" icon={Calendar} className="tabular-nums">
+                    {periodoTexto}
+                  </Badge>
+                  <Badge variant="neutral" icon={Coins}>
+                    COP
+                  </Badge>
                   {(categoria !== "TODAS" || area !== "TODAS") && (
-                    <SourceBadge variant="positive">
-                      Filtro: {categoria !== "TODAS" ? categoria : "Todas cat."} ·{" "}
+                    <Badge variant="primary">
+                      {categoria !== "TODAS" ? categoria : "Todas cat."} ·{" "}
                       {area !== "TODAS" ? area : "Todas áreas"}
-                    </SourceBadge>
+                    </Badge>
                   )}
-                  <SourceBadge variant="sql">
-                    Actualizado:{" "}
-                    {resumen.actualizado_en
-                      ? new Date(resumen.actualizado_en).toLocaleString("es-CO")
-                      : "—"}
-                  </SourceBadge>
-                  <SourceBadge variant="ai" showIcon>
-                    SQL calcula · IA explica
-                  </SourceBadge>
+                  <Badge variant="neutral" icon={Clock} className="tabular-nums">
+                    Act: {actualizadoTexto}
+                  </Badge>
+                  <Tooltip text="Todas las cifras se calculan vía SQL en Snowflake; la IA únicamente explica los resultados.">
+                    <Badge variant="primary" icon={Database} className="cursor-help">
+                      Snowflake · SQL calcula
+                    </Badge>
+                  </Tooltip>
                 </div>
               </div>
             </div>
 
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="md"
+              icon={RefreshCw}
+              loading={loadingKpis}
               onClick={() => {
                 cargarHealth();
-                cargarKpis();
-                cargarSecundarios();
+                cargarKpis(true);
+                cargarSecundarios(true);
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-foreground cursor-pointer transition-colors duration-150 motion-reduce:transition-none hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+              className="shadow-xs hover:shadow-sm"
             >
-              <RefreshCw className="w-4 h-4" aria-hidden="true" />
-              <span>Actualizar</span>
-            </button>
+              Actualizar datos
+            </Button>
           </div>
         </header>
 
-        <main className="flex-1 p-4 lg:p-6 space-y-4 max-w-[1440px] w-full mx-auto">
+        {/* Área de Contenido */}
+        <main className="flex-1 px-4 sm:px-6 py-5 max-w-[1380px] w-full mx-auto space-y-4 sm:space-y-5">
           {errorGlobal && (
-            <div
-              role="alert"
-              className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
-            >
+            <AlertBanner type="error" title="Error de conexión con Snowflake">
               {errorGlobal}
-            </div>
+            </AlertBanner>
           )}
 
           {!health?.groq_configured && (tab === "chat" || tab === "reportes") && (
-            <div
-              role="alert"
-              className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-            >
-              Falta configurar <strong className="font-mono">GROQ_API_KEY</strong> en el archivo{" "}
-              <code className="font-mono">.env</code> del proyecto para habilitar las respuestas con{" "}
-              <code className="font-mono">{health?.groq_model || "openai/gpt-oss-120b"}</code>. Los
-              reportes almacenados en Snowflake (<code className="font-mono">AI_AGG</code>) y el
-              dashboard SQL siguen funcionando.
-            </div>
+            <AlertBanner type="warning" title="Configuración de Groq pendiente">
+              Falta configurar <code className="font-mono">GROQ_API_KEY</code> en{" "}
+              <code className="font-mono">.env</code> para habilitar el modelo{" "}
+              <code className="font-mono">{health?.groq_model || "openai/gpt-oss-120b"}</code>. El
+              dashboard SQL y los reportes en Snowflake siguen disponibles.
+            </AlertBanner>
           )}
 
           {(tab === "dashboard" || tab === "reportes") && (
@@ -298,7 +321,12 @@ export default function App() {
           )}
 
           {tab === "dashboard" && (
-            <DashboardView kpis={kpis} auditoria={auditoria} loading={loadingKpis} />
+            <DashboardView
+              kpis={kpis}
+              auditoria={auditoria}
+              loading={loadingKpis}
+              onResetFiltros={limpiarFiltros}
+            />
           )}
 
           {tab === "chat" && (
@@ -317,6 +345,7 @@ export default function App() {
 
           {tab === "reportes" && (
             <ReportsView
+              kpis={kpis}
               reporteGroq={reporteGroq}
               reportes={reportes}
               loadingReporte={loadingReporte}
