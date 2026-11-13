@@ -74,14 +74,13 @@ Estas decisiones representan la arquitectura acordada para la primera versión:
 
 1. **Los datos serán sintéticos y se generarán con Python.** No se consumirán APIs externas ni fuentes financieras reales.
 2. Python generará los datos y realizará la carga inicial/incremental a Snowflake.
-3. Se cargarán los datos originales a **Bronze**. No limpiar completamente los datos antes de ingresarlos: Bronze debe conservar la representación recibida para que Silver tenga una transformación real que realizar.
-4. Las capas **Bronze, Silver y Gold se almacenan en Snowflake**. Las transformaciones SQL se ejecutan en Snowflake, no en una base de datos local ni en DuckDB/SQLite.
-5. **Apache Airflow orquesta** las tareas y sus dependencias. No es el motor de transformación ni el generador de los indicadores.
-6. Airflow se ejecutará localmente mediante Docker durante el desarrollo académico y se conectará a Snowflake mediante una conexión configurada en Airflow.
-7. Snowflake almacena los datos y ejecuta SQL mediante un virtual warehouse.
-8. La capa de presentación será **Streamlit**, con dashboard, consultas y reportes.
-9. Las capacidades de IA se integrarán con Snowflake Cortex, según disponibilidad y compatibilidad de la cuenta: Cortex Analyst para preguntas sobre datos estructurados, Cortex COMPLETE para redactar reportes y Cortex ML para detección de anomalías cuando la función esté habilitada y validada.
-10. Las llamadas generativas y los reportes costosos no deben ejecutarse automáticamente en cada ciclo ETL. El DAG de reportes será independiente y de ejecución manual inicialmente.
+3. Los datos crudos iniciales fueron procesados, depurados y consolidados en una única capa limpia: **DATAFINANCE.PUBLIC**. Se eliminaron los esquemas transitorios y Airflow para optimizar el almacenamiento, simplificar el desarrollo y asegurar que el 100% de los datos consumidos por la API y la IA estén estandarizados.
+4. Las tablas analíticas y vistas residen en **Snowflake (`DATAFINANCE.PUBLIC`)**. Las transformaciones SQL se ejecutan en Snowflake, no en una base de datos local ni en DuckDB/SQLite.
+5. **Arquitectura unificada y ejecución modular sin Airflow:** Con los datos ya ingestados y limpios (37,391 transacciones), la infraestructura fue simplificada eliminando Docker/Airflow/PostgreSQL. Los scripts DDL y analíticos residen en `snowflake/sql/schema.sql`, `anomalias.sql` y `reporte.sql`, y se ejecutan vía Python (`scripts/ejecutar_sql.py`) o endpoints FastAPI.
+6. Snowflake almacena los datos y ejecuta SQL mediante un virtual warehouse (`WH_DATAFINANCE`, `XSMALL`).
+7. La capa de presentación y API REST comprende **FastAPI** en backend con descarga ejecutiva en PDF (ReportLab), y **React + Tailwind CSS v4 + Plotly.js** en frontend.
+8. Las capacidades de IA integran Groq Text-to-SQL (openai/gpt-oss-120b) validado con guardián SQL de solo lectura (`backend/sql_guard.py`), y Snowflake AISQL (`AI_AGG`) para redacción ejecutiva.
+9. Las llamadas generativas y reportes se ejecutan bajo demanda para controlar costos de inferencia y cómputo.
 
 No cambies estas decisiones por otra tecnología sin presentar primero la razón, las ventajas, los costos y las consecuencias para la arquitectura.
 
@@ -90,40 +89,33 @@ No cambies estas decisiones por otra tecnología sin presentar primero la razón
 ```text
 ┌────────────────────────────── ENTORNO LOCAL ──────────────────────────────┐
 │                                                                           │
-│  Python: generador de datos sintéticos                                    │
-│       │                                                                   │
-│       └── carga inicial / generación incremental                         │
+│  Python: ejecutor de scripts SQL (scripts/ejecutar_sql.py)                │
 │                                                                           │
-│  Airflow en Docker                                                        │
-│   ├── DAG datafinance_etl                                                 │
-│   │    1. Generar transacciones del periodo                               │
-│   │    2. Cargar datos crudos en Bronze                                   │
-│   │    3. Ejecutar transformación Bronze → Silver                        │
-│   │    4. Validar Silver                                                  │
-│   │    5. Ejecutar transformación Silver → Gold                           │
-│   │    6. Ejecutar detección de anomalías                                 │
-│   │                                                                       │
-│   └── DAG datafinance_reporte (manual inicialmente)                      │
-│        1. Obtener indicadores ya calculados                               │
-│        2. Solicitar a Cortex la redacción del reporte                     │
-│        3. Guardar el reporte y sus metadatos                              │
+│  Backend FastAPI (:8002)                                                  │
+│   ├── Consultas analíticas a Snowflake (KPIs, series, filtros)            │
+│   ├── Guardián SQL de solo lectura (backend/sql_guard.py)                │
+│   ├── Analista Text-to-SQL con Groq (openai/gpt-oss-120b)                │
+│   ├── Generador de Reportes Ejecutivos PDF con ReportLab                  │
+│   └── Disparador de reportes en Snowflake AISQL (AI_AGG)                  │
+│                                                                           │
+│  Frontend React + Tailwind CSS v4 + Plotly.js (:5173)                     │
+│   └── Dashboard financiero | Chat Text-to-SQL | Descarga PDF de Reportes  │
 └───────────────────────────────┬───────────────────────────────────────────┘
-                                │ conexión segura
+                                │ conexión segura (snowflake-connector-python)
                                 ▼
 ┌──────────────────────────────── SNOWFLAKE ─────────────────────────────────┐
 │  WH_DATAFINANCE (XSMALL)                                                  │
 │                                                                           │
 │  DATAFINANCE                                                              │
-│   ├── BRONZE: datos recibidos, sin limpiar                               │
-│   ├── SILVER: datos tipados, depurados y estandarizados                  │
-│   └── GOLD: indicadores, agregaciones y resultados analíticos             │
+│   └── PUBLIC (Esquema consolidado 100% limpio):                           │
+│        ├── TRANSACCIONES (37,391 registros limpios, tipados y únicos)    │
+│        ├── KPI_MENSUAL (25 periodos con variaciones y márgenes)           │
+│        ├── KPI_CATEGORIA_MENSUAL (Vista analítica)                        │
+│        ├── KPI_AREA_MENSUAL (Vista analítica)                             │
+│        ├── ANOMALIAS (10 anomalías estadísticas detectadas)               │
+│        └── REPORTES (Historial de informes generados por IA)              │
 │                                                                           │
-│  Cortex Analyst / Cortex COMPLETE / Cortex ML (según disponibilidad)     │
-└───────────────────────────────┬───────────────────────────────────────────┘
-                                │ lectura de datos y resultados
-                                ▼
-┌────────────────────────────── STREAMLIT ──────────────────────────────────┐
-│  Dashboard financiero | Consultas en lenguaje natural | Reportes          │
+│  Snowflake AISQL (AI_AGG) / Groq Text-to-SQL                              │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -131,11 +123,11 @@ No cambies estas decisiones por otra tecnología sin presentar primero la razón
 
 | Componente | Responsabilidad | No debe hacer |
 |---|---|---|
-| Python | Generar datos sintéticos y cargarlos a Bronze | Ejecutar la arquitectura medallion localmente |
-| Airflow | Programar, ordenar, reintentar y supervisar tareas | Calcular KPIs o sustituir a Snowflake |
-| Snowflake | Almacenar datos y ejecutar transformaciones SQL | Depender de una base de datos local para las capas |
-| Cortex | Interpretar preguntas o redactar explicaciones con datos calculados | Inventar cifras o reemplazar las consultas SQL |
-| Streamlit | Presentar indicadores, filtros, chat y reportes | Contener la lógica ETL o credenciales sensibles |
+| Python / Scripts | Ejecutar scripts DDL/DML sobre Snowflake y verificar auditoría | Depender de un motor relacional local |
+| FastAPI Backend | Servir KPIs, validar SQL con guardián de solo lectura y generar PDFs | Inventar métricas financieras o ejecutar DDL no seguro |
+| Snowflake | Almacenar datos limpios (`PUBLIC.*`) y ejecutar consultas agregadas | Depender de esquemas sucios o bases locales |
+| Groq / AISQL | Interpretar lenguaje natural, generar SQL autorizado y redactar | Inventar cifras o modificar tablas |
+| Frontend React | Presentar dashboards, gráficos interactivos, chat y descargar PDF | Contener credenciales o lógica de transformación |
 
 ## 6. Snowflake: objetos y convenciones
 
@@ -144,16 +136,13 @@ La estructura acordada es:
 ```text
 DATABASE: DATAFINANCE
 │
-├── SCHEMA: BRONZE
-│   └── TRANSACCIONES
-│
-├── SCHEMA: SILVER
-│   └── TRANSACCIONES
-│
-└── SCHEMA: GOLD
-    ├── KPI_MENSUAL
-    ├── ANOMALIAS
-    └── REPORTES
+└── SCHEMA: PUBLIC
+    ├── TRANSACCIONES          (Tabla base de hechos limpia, 37,391 filas)
+    ├── KPI_MENSUAL            (Tabla de KPIs agregados por mes)
+    ├── KPI_CATEGORIA_MENSUAL  (Vista mensual por categoría)
+    ├── KPI_AREA_MENSUAL       (Vista mensual por área)
+    ├── ANOMALIAS              (Tabla de anomalías detectadas)
+    └── REPORTES               (Tabla de reportes ejecutivos con IA)
 ```
 
 Warehouse de desarrollo previsto:
@@ -248,56 +237,27 @@ Estas cifras son parámetros iniciales para datos sintéticos, no afirmaciones s
 
 Las tablas y vistas finales deben tener nombres y granularidad documentados. Antes de crear nuevas tablas, revisar si una vista es suficiente.
 
-## 9. Airflow: DAGs y comportamiento
+## 9. Pipeline de datos y transformaciones SQL (Sin Airflow)
 
-Mantener inicialmente dos DAGs separados:
+Tras verificar que los datos están ingestados y limpios en Snowflake, las transformaciones y validaciones se ejecutan de manera directa:
 
-### `datafinance_etl`
-
-DAG de procesamiento de datos. Puede programarse diariamente durante la simulación, y también debe permitir una carga histórica controlada.
-
-Orden lógico:
+### Orden lógico de ejecución
 
 ```text
-generar_y_cargar_bronze
+generar_y_cargar_bronze (scripts/generar_dataset.py)
         ↓
-transformar_silver
+transformar_silver      (snowflake/sql/silver_transacciones.sql)
         ↓
-validar_silver
+validar_silver          (snowflake/sql/validar_silver.sql)
         ↓
-construir_gold
+construir_gold          (snowflake/sql/gold_kpi_mensual.sql)
         ↓
-detectar_anomalias
+detectar_anomalias      (snowflake/sql/anomalias.sql)
 ```
 
-- La generación histórica inicial (24 meses) debe poder ejecutarse como una carga de preparación controlada, sin regenerar todo el histórico en cada ejecución diaria.
-- En ejecuciones periódicas, generar únicamente las transacciones del periodo correspondiente y agregarlas a Bronze.
-- Usar la fecha lógica de ejecución de Airflow para que los datos del periodo sean reproducibles.
-- Diseñar las cargas para soportar reintentos sin crear duplicados accidentales. La duplicación deliberada del dataset de prueba debe introducirse una sola vez y estar diferenciada de duplicaciones provocadas por reintentos.
-- Ejecutar Silver solo después de que la carga a Bronze termine correctamente.
-- Si falla la validación de Silver, no continuar hacia Gold ni hacia la detección de anomalías.
-- Configurar `catchup` de manera consciente. No ejecutar backfills amplios sin autorización y sin estimar el consumo de Snowflake.
-
-### `datafinance_reporte`
-
-DAG separado y manual inicialmente.
-
-- Lee KPIs ya calculados en Gold.
-- Construye un contexto acotado para el reporte.
-- Solicita a Cortex la redacción en lenguaje natural.
-- Guarda el texto, el periodo analizado, la fecha de generación y las referencias a los datos utilizados.
-- No recalcula los indicadores con el LLM.
-- No ejecutar por defecto en cada ciclo de ETL.
-
-### Reglas de Airflow
-
-- Los DAGs deben ser pequeños, legibles y declarativos.
-- Mantener las consultas SQL en archivos independientes, no incrustar bloques SQL extensos dentro del DAG.
-- Usar conexiones de Airflow y variables/secretos para configuración; no poner contraseñas en el código.
-- Definir `retries`, `retry_delay`, `execution_timeout` y alertas de fallo razonables.
-- Evitar tareas que hagan trabajo pesado durante la fase de importación del DAG.
-- Pasar entre tareas solo metadatos pequeños. No transportar DataFrames grandes mediante XCom.
-- Registrar identificador de ejecución, periodo, filas procesadas, duración y resultado de las validaciones.
+- **Ejecución CLI:** El script `scripts/ejecutar_sql.py` permite correr en orden los archivos SQL sobre Snowflake y verificar la auditoría de conteos entre capas.
+- **Reportes ejecutivos:** El archivo `snowflake/sql/reporte.sql` se ejecuta bajo demanda (bien sea desde el endpoint `/api/reportes/generar-snowflake` o vía Snowflake AISQL `AI_AGG`) para controlar costos de inferencia.
+- **Validaciones:** Si falla alguna aserción de calidad en `validar_silver.sql`, no se deben procesar los KPIs de Gold ni la detección de anomalías.
 
 ## 10. Agente de IA y reglas de respuesta
 
@@ -412,35 +372,30 @@ DataFinance-AI/
 ├── README.md
 ├── .gitignore
 ├── .env.example
-├── docker-compose.yaml
-│
-├── airflow/
-│   ├── dags/
-│   │   ├── datafinance_etl.py
-│   │   ├── datafinance_reporte.py
-│   │   └── sql/
-│   │       ├── silver_transacciones.sql
-│   │       ├── validar_silver.sql
-│   │       ├── gold_kpi_mensual.sql
-│   │       ├── anomalias.sql
-│   │       └── reporte.sql
-│   ├── scripts/
-│   │   ├── generar_dataset.py
-│   │   └── snowflake_loader.py
-│   └── requirements.txt
+├── requirements.txt
 │
 ├── snowflake/
-│   ├── 01_setup.sql
-│   ├── 02_bronze.sql
-│   ├── 03_silver.sql
-│   ├── 04_gold.sql
-│   └── semantic_model/
+│   └── sql/
+│       ├── silver_transacciones.sql
+│       ├── validar_silver.sql
+│       ├── gold_kpi_mensual.sql
+│       ├── anomalias.sql
+│       └── reporte.sql
 │
-├── app/
-│   ├── streamlit_app.py
-│   ├── pages/
-│   ├── components/
-│   └── services/
+├── scripts/
+│   ├── generar_dataset.py
+│   ├── ejecutar_sql.py
+│   └── evaluar_agente.py
+│
+├── backend/
+│   ├── main.py
+│   ├── snowflake_client.py
+│   ├── groq_analyst.py
+│   └── sql_guard.py
+│
+├── frontend/
+│   ├── src/
+│   └── package.json
 │
 ├── tests/
 │   ├── test_generator.py
@@ -475,13 +430,12 @@ No crear todos estos directorios de una vez si todavía no son necesarios. Const
 - Documentar reglas de negocio complejas.
 - Preferir operaciones repetibles e idempotentes; no utilizar `CREATE OR REPLACE` indiscriminadamente si puede borrar información que deba conservarse.
 
-### Airflow y Docker
+### Scripts de Automatización y SQL
 
-- Mantener los DAGs enfocados en orquestación.
-- Mantener las consultas SQL fuera del código Python de los DAGs.
-- No usar XCom para transportar datasets grandes.
-- Fijar versiones compatibles de Airflow y providers en los archivos de dependencias.
-- No modificar configuraciones de Docker que no sean necesarias para el proyecto.
+- Mantener la ejecución SQL enfocada y desacoplada de la interfaz.
+- Mantener las consultas SQL en archivos `.sql` independientes bajo `snowflake/sql/`.
+- No transportar datasets masivos en memoria innecesariamente.
+- Registrar identificador de ejecución, periodo, filas procesadas, duración y resultado de las validaciones.
 
 ## 16. Forma de trabajar del agente
 
@@ -522,4 +476,4 @@ Seguir este orden para reducir retrabajo:
 11. Construir la interfaz Streamlit y conectar dashboard, consultas y reportes.
 12. Ejecutar pruebas integrales, documentar resultados y preparar la sustentación académica.
 
-**Criterio de finalización del MVP:** un conjunto sintético reproducible se carga a Bronze; Airflow orquesta la transformación y validación en Snowflake; Gold presenta indicadores financieros comprobables; las anomalías de prueba pueden identificarse; y la interfaz permite consultar y explicar los resultados sin que la IA invente los valores.
+**Criterio de finalización del MVP:** un conjunto sintético reproducible se carga a Bronze; Snowflake ejecuta y valida la transformación Medallion (Silver y Gold); Gold presenta indicadores financieros comprobables; las anomalías de prueba pueden identificarse; y la interfaz permite consultar y explicar los resultados sin que la IA invente los valores.

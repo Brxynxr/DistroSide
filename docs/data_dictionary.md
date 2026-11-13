@@ -1,75 +1,80 @@
-# Diccionario de Datos — DataFinance AI (`DATAFINANCE`)
+# Diccionario de Datos — DataFinance AI (`DATAFINANCE.PUBLIC`)
 
 Moneda de todas las métricas monetarias: **Pesos Colombianos (`COP`)**.
 
+Los datos han sido depurados, tipados y consolidados en el esquema único **`DATAFINANCE.PUBLIC`**, garantizando que el 100% de las tablas y vistas consumidas por la API FastAPI, el analista Groq y los reportes ejecutivos contengan información limpia y verificada.
+
 ---
 
-## 1. Capa Bronze (`DATAFINANCE.BRONZE`)
+## 1. Tabla de Hechos: `DATAFINANCE.PUBLIC.TRANSACCIONES`
 
-### `TRANSACCIONES`
-Datos sintéticos crudos generados por [generar_dataset.py](file:///home/cohorte5/Escritorio/proyecto%20/scripts/generar_dataset.py).
+Contiene el historial completo de 37,391 transacciones de *Distribuidora del Caribe S.A.S.* entre noviembre de 2024 y noviembre de 2026.
 
-| Columna | Tipo | Descripción | Inconsistencias controladas |
+| Columna | Tipo | Restricción / Formato | Descripción |
 |---|---|---|---|
-| `ID_TRANSACCION` | `VARCHAR` | Identificador único o `T-<YYYYMMDD>-XXXX` | ~1% duplicados exactos |
-| `FECHA` | `VARCHAR` | Fecha original del movimiento | Mezcla `YYYY-MM-DD` (~75%) y `DD/MM/YYYY` (~25%) |
-| `TIPO` | `VARCHAR` | `INGRESO` o `GASTO` | Variaciones de mayúsculas, minúsculas y espacios |
-| `CATEGORIA` | `VARCHAR` | Categoría comercial u operativa | Espacios extremos y capitalización irregular |
-| `MONTO` | `FLOAT` | Valor monetario en COP | ~2% valores nulos (`NaN`) |
-| `AREA` | `VARCHAR` | `Ventas`, `Operaciones`, `Administración` | Capitalización mixta antes de Silver |
-| `DESCRIPCION` | `VARCHAR` | Descripción breve de la operación | Dato textual no confiable para prompts LLM |
+| `ID_TRANSACCION` | `VARCHAR(64)` | `PRIMARY KEY`, único | Identificador alfanumérico limpio de la transacción (`T-<YYYYMMDD>-XXXX`) |
+| `FECHA` | `DATE` | No nulo (`YYYY-MM-DD`) | Fecha efectiva de la operación comercial u operativa |
+| `ANIO` | `NUMBER(4,0)` | Calculado | Año calendario del movimiento |
+| `MES` | `DATE` | Calculado | Primer día del mes (`DATE_TRUNC('MONTH', FECHA)`) |
+| `ANIO_MES` | `VARCHAR(7)` | `YYYY-MM` | Clave mensual estandarizada para filtros y agrupaciones |
+| `TIPO` | `VARCHAR(16)` | `INGRESO` o `GASTO` | Clasificación general del flujo monetario |
+| `CATEGORIA` | `VARCHAR(64)` | Mayúsculas, sin espacios | Categoría (Ventas contado/crédito, Proveedores, Nómina, etc.) |
+| `AREA` | `VARCHAR(32)` | `VENTAS`, `OPERACIONES`, `ADMINISTRACIÓN` | Área organizativa responsable del ingreso o gasto |
+| `MONTO` | `NUMBER(14,2)` | `> 0` | Monto en pesos colombianos (COP), sin valores nulos ni negativos |
+| `DESCRIPCION` | `VARCHAR(256)` | Texto informativo | Detalle operativo de la transacción (tratado como no ejecutable) |
 
 ---
 
-## 2. Capa Silver (`DATAFINANCE.SILVER`)
+## 2. Indicadores Mensuales: `DATAFINANCE.PUBLIC.KPI_MENSUAL`
 
-Transformación definida en [silver_transacciones.sql](file:///home/cohorte5/Escritorio/proyecto%20/airflow/dags/sql/silver_transacciones.sql) y validada por [validar_silver.sql](file:///home/cohorte5/Escritorio/proyecto%20/airflow/dags/sql/validar_silver.sql).
+Tabla precalculada de KPIs a nivel mensual (25 meses históricos).
 
-### Reglas de calidad aplicadas
-- **Fechas**: `REGEXP_LIKE` explícito para `YYYY-MM-DD` y `DD/MM/YYYY` convertido con `TRY_TO_DATE`. Cualquier otro formato resulta `NULL` y se rechaza.
-- **Textos**: `UPPER(TRIM(...))` sobre `TIPO`, `CATEGORIA` y `AREA`.
-- **Nulos y no positivos**: los montos `NULL` o `<= 0` **no se reemplazan por `0`** porque distorsionarían promedios y recuentos; se envían a `TRANSACCIONES_RECHAZADOS`.
-- **Duplicados**: `ROW_NUMBER() OVER (PARTITION BY TRIM(ID_TRANSACCION) ORDER BY IFF(MONTO IS NULL, 1, 0), FECHA)` conserva la copia válida (`RN = 1`) y audita las restantes (`RN > 1`).
-
-### `TRANSACCIONES`
 | Columna | Tipo | Descripción |
 |---|---|---|
-| `ID_TRANSACCION` | `VARCHAR` | Identificador limpio (`TRIM`), único |
-| `FECHA` | `DATE` | Fecha validada |
-| `ANIO` | `NUMBER` | Año calendario |
-| `MES` | `DATE` | Primer día del mes (`DATE_TRUNC('MONTH', FECHA)`) |
-| `ANIO_MES` | `VARCHAR` | Periodo `YYYY-MM` |
-| `TIPO` | `VARCHAR` | `INGRESO` o `GASTO` |
-| `CATEGORIA` | `VARCHAR` | Categoría estandarizada en mayúsculas |
-| `AREA` | `VARCHAR` | `VENTAS`, `OPERACIONES` o `ADMINISTRACIÓN` |
-| `MONTO` | `NUMBER(14,2)` | Valor positivo en COP |
-| `DESCRIPCION` | `VARCHAR` | Descripción limpia |
-| `FECHA_ORIGINAL` | `VARCHAR` | Trazabilidad del texto recibido en Bronze |
-| `CARGADO_SILVER_EN` | `TIMESTAMP_NTZ` | Marca temporal de carga en Silver |
-
-### `TRANSACCIONES_RECHAZADOS`
-Audita los registros no promovidos a Silver con `MOTIVO_RECHAZO` explícito: `ID_NULO`, `DUPLICADO`, `FECHA_INVALIDA`, `MONTO_NULO_O_NO_POSITIVO`, `TIPO_INVALIDO`.
+| `MES` | `DATE` | Primer día del mes |
+| `ANIO_MES` | `VARCHAR(7)` | Periodo en formato `YYYY-MM` |
+| `ANIO` | `NUMBER(4,0)` | Año calendario |
+| `TOTAL_TRANSACCIONES` | `NUMBER(38,0)` | Número de transacciones registradas en el mes |
+| `INGRESOS` | `NUMBER(14,2)` | Suma de movimientos donde `TIPO = 'INGRESO'` |
+| `GASTOS` | `NUMBER(14,2)` | Suma de movimientos donde `TIPO = 'GASTO'` |
+| `UTILIDAD` | `NUMBER(14,2)` | `INGRESOS - GASTOS` |
+| `MARGEN_PCT` | `NUMBER(8,2)` | `(UTILIDAD / INGRESOS) * 100`, con control de división por cero |
+| `INGRESOS_MES_ANTERIOR` | `NUMBER(14,2)` | Ingresos del mes previo (`LAG()`) |
+| `GASTOS_MES_ANTERIOR` | `NUMBER(14,2)` | Gastos del mes previo (`LAG()`) |
+| `UTILIDAD_MES_ANTERIOR` | `NUMBER(14,2)` | Utilidad del mes previo (`LAG()`) |
+| `VAR_INGRESOS_ABS` | `NUMBER(14,2)` | Variación absoluta de ingresos vs mes anterior |
+| `VAR_INGRESOS_PCT` | `NUMBER(8,2)` | Variación porcentual de ingresos vs mes anterior |
+| `VAR_GASTOS_ABS` | `NUMBER(14,2)` | Variación absoluta de gastos vs mes anterior |
+| `VAR_GASTOS_PCT` | `NUMBER(8,2)` | Variación porcentual de gastos vs mes anterior |
+| `VAR_UTILIDAD_ABS` | `NUMBER(14,2)` | Variación absoluta de utilidad vs mes anterior |
+| `VAR_UTILIDAD_PCT` | `NUMBER(8,2)` | Variación porcentual de utilidad vs mes anterior |
+| `ES_COMPLETO` | `BOOLEAN` | `TRUE` si `DAY(MAX(FECHA)) >= 28`; `FALSE` si es mes en curso |
 
 ---
 
-## 3. Capa Gold (`DATAFINANCE.GOLD`)
+## 3. Vistas Analíticas
 
-Construida en [gold_kpi_mensual.sql](file:///home/cohorte5/Escritorio/proyecto%20/airflow/dags/sql/gold_kpi_mensual.sql), [anomalias.sql](file:///home/cohorte5/Escritorio/proyecto%20/airflow/dags/sql/anomalias.sql) y [reporte.sql](file:///home/cohorte5/Escritorio/proyecto%20/airflow/dags/sql/reporte.sql).
+- **`DATAFINANCE.PUBLIC.KPI_CATEGORIA_MENSUAL`**: Desglosa ingresos y gastos por categoría mes a mes, calculando monto total, conteo de transacciones y variaciones mensuales.
+- **`DATAFINANCE.PUBLIC.KPI_AREA_MENSUAL`**: Agrupa los flujos financieros por área funcional (`VENTAS`, `OPERACIONES`, `ADMINISTRACIÓN`).
 
-### `KPI_MENSUAL` (Tabla — 1 fila por mes)
-Incluye `INGRESOS`, `GASTOS`, `UTILIDAD` (`INGRESOS - GASTOS`), `MARGEN_PCT` (protegido contra división por cero), valores del mes anterior (`LAG`) y variaciones absolutas/porcentuales (`VAR_*_ABS`, `VAR_*_PCT`).
+---
 
-### `KPI_CATEGORIA_MENSUAL` (Vista — grano `MES × TIPO × CATEGORIA`)
-Expone `MONTO_TOTAL`, `TOTAL_TRANSACCIONES`, `MONTO_MES_ANTERIOR`, `VAR_ABS` y `VAR_PCT`.
+## 4. Detección de Anomalías: `DATAFINANCE.PUBLIC.ANOMALIAS`
 
-### `KPI_AREA_MENSUAL` (Vista — grano `MES × AREA × TIPO`)
-Expone agregaciones por `VENTAS`, `OPERACIONES` y `ADMINISTRACIÓN` con variación mensual.
+Identifica variaciones y picos/caídas atípicas mediante análisis estadístico ($|Z\text{-score}| \ge 2.5$) sobre meses completos:
 
-### `ANOMALIAS` (Tabla)
-Detecta desviaciones con `|Z_SCORE| >= 2.5` sobre **meses completos** (`DAY(MAX(FECHA)) >= 28`), tanto por categoría como en ingresos totales. Anomalías sembradas en el dataset sintético base (`seed=42`):
-- **2026-03 (`MARKETING`)**: incremento ~5x por campaña agresiva no presupuestada (`PICO_ATIPICO`).
-- **2026-06 (`INGRESOS`)**: caída al ~62% del volumen habitual por cierre vial y desabastecimiento (`CAIDA_ATIPICA`).
-- **2026-08 (`LOGISTICA`)**: incremento ~3.5x por reparación mayor de flota y fletes de emergencia (`PICO_ATIPICO`).
+- **2026-03 (`MARKETING`)**: Incremento ~5x por campaña agresiva no presupuestada (`PICO_ATIPICO`).
+- **2026-06 (`INGRESOS`)**: Caída al ~62% del volumen habitual por contingencia vial (`CAIDA_ATIPICA`).
+- **2026-08 (`LOGISTICA`)**: Incremento ~3.5x por mantenimiento mayor de flota (`PICO_ATIPICO`).
 
-### `REPORTES` (Tabla)
-Almacena `ID_REPORTE`, `GENERADO_EN`, `MODELO` (`snowflake-aisql-ai_agg`), `PERIODO_DESDE`, `PERIODO_HASTA`, `RESUMEN_DATOS` (`VARIANT`) y `REPORTE_TEXTO`.
+---
+
+## 5. Reportes Ejecutivos: `DATAFINANCE.PUBLIC.REPORTES`
+
+Historial de reportes ejecutivos redactados por IA (`AI_AGG` o Groq):
+- `ID_REPORTE`: Identificador único UUID / prefijo.
+- `GENERADO_EN`: Marca temporal de generación.
+- `MODELO`: Modelo generativo utilizado.
+- `PERIODO_DESDE` / `PERIODO_HASTA`: Rango analizado.
+- `RESUMEN_DATOS`: Payload JSON con KPIs agregados.
+- `REPORTE_TEXTO`: Contenido redactado del informe ejecutivo disponible para exportación PDF en ReportLab.

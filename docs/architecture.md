@@ -11,39 +11,35 @@ Su principio rector es **«SQL calcula; la IA explica»**:
 ## 2. Flujo de componentes
 
 ```text
-[Python: generar_dataset.py]
-    │  Genera datos sintéticos (24 meses + suciedad controlada + anomalías)
+[Snowflake: DATAFINANCE.PUBLIC (WH_DATAFINANCE XSMALL · ROL_DATAFINANCE)]
+    ├── TRANSACCIONES: 37,391 registros limpios, deduplicados y tipados
+    ├── KPI_MENSUAL: 25 meses históricos con ingresos, gastos, utilidad y variaciones
+    ├── KPI_CATEGORIA_MENSUAL: Vista analítica agrupada por categoría
+    ├── KPI_AREA_MENSUAL: Vista analítica agrupada por área
+    ├── ANOMALIAS: 10 anomalías detectadas por Z-score y ratios atípicos
+    └── REPORTES: Historial de informes ejecutivos redactados
     ▼
-[Apache Airflow en Docker (:8082)]
-    ├── DAG datafinance_etl (@daily, catchup=False)
-    │     1. generar_y_cargar_bronze (append idempotente)
-    │     2. transformar_silver       -> SILVER.TRANSACCIONES + SILVER.TRANSACCIONES_RECHAZADOS
-    │     3. validar_silver           -> SQLCheckOperator (detiene pipeline si falla)
-    │     4. construir_gold           -> GOLD.KPI_MENSUAL, KPI_CATEGORIA_MENSUAL, KPI_AREA_MENSUAL
-    │     5. detectar_anomalias       -> GOLD.ANOMALIAS (Z-Score >= 2.5 sobre meses completos)
-    │
-    └── DAG datafinance_reporte (schedule=None, manual / bajo demanda)
-          └── generar_reporte_llm     -> GOLD.REPORTES vía Snowflake AI_AGG
-    │
-    ▼
-[Snowflake (WH_DATAFINANCE XSMALL · ROL_DATAFINANCE)]
-    │  Almacenamiento Medallion + ejecución SQL + AISQL
-    ▼
-[FastAPI (:8002)] ◄──── Validador SQL solo lectura (backend/sql_guard.py) + Groq analyst
-    │
+[FastAPI (:8002)]
+    ├── Consultas analíticas seguras y directas a Snowflake
+    ├── Validador SQL solo lectura (backend/sql_guard.py)
+    ├── Analista Text-to-SQL con Groq (openai/gpt-oss-120b)
+    └── Generador de Reportes Ejecutivos PDF con ReportLab (backend/report_pdf.py)
     ▼
 [React + Vite + Tailwind CSS v4 + Plotly.js (:5173)]
+    ├── Dashboard interactivo (KPIs, Plotly Spline / Bars / Donut)
+    ├── Chat Text-to-SQL con trazabilidad de consultas
+    ├── Módulo de Anomalías clasificadas
+    └── Descarga instantánea de Reportes en PDF ejecutivo
 ```
 
 ## 3. Decisiones técnicas sustentadas
 
-1. **Arquitectura Medallion real en Snowflake (`BRONZE` → `SILVER` → `GOLD`)**:
-   - Bronze conserva las fechas mixtas (`YYYY-MM-DD` y `DD/MM/YYYY`), textos con espacios/mayúsculas mixtas, montos nulos (~2%) y duplicados (~1%).
-   - Silver depura y registra cada fila descartada en `TRANSACCIONES_RECHAZADOS` con su `MOTIVO_RECHAZO` para evitar pérdidas silenciosas.
-   - Gold expone KPIs precalculados con `LAG()` y división segura para el frontend y el agente.
-2. **Separación de DAG ETL vs DAG de reportes IA**:
-   - `datafinance_etl` no invoca LLMs en cada ciclo diario; `datafinance_reporte` corre con `schedule=None` para controlar créditos y costo de inferencia.
-3. **Analista híbrido con Groq (`openai/gpt-oss-120b`) + Guardián SQL**:
-   - En cuentas trial de Snowflake donde `CORTEX.COMPLETE` o `CORTEX.ANALYST` están restringidos, FastAPI actúa como puente controlado: Groq genera una única consulta `SELECT`/`WITH`, [sql_guard.py](file:///home/cohorte5/Escritorio/proyecto%20/backend/sql_guard.py) bloquea cualquier comando de escritura, esquemas del sistema (`INFORMATION_SCHEMA`, `SNOWFLAKE.*`) o acceso a `BRONZE`, y ejecuta bajo `ROL_DATAFINANCE`.
+1. **Consolidación en Esquema Limpio Único (`DATAFINANCE.PUBLIC`)**:
+   - Una vez concluida la ingestión inicial y la validación de las reglas de depuración de calidad de datos, se consolidaron los datos en una única capa limpia (`DATAFINANCE.PUBLIC`), eliminando la sobrecarga de múltiples esquemas intermedios y contenedores pesados de Airflow/PostgreSQL.
+   - El 100% de los datos consumidos por la API y los modelos de IA son limpios, consistentes y trazables.
+2. **Generación de Reportes Ejecutivos en PDF (ReportLab)**:
+   - Los informes redactados por IA ya no saturan la interfaz con texto crudo. Se entregan directamente en formato PDF corporativo con doble pasada (`Página X de Y`), scorecard de KPIs, desglose por categorías y tablas estilizadas.
+3. **Analista Text-to-SQL con Groq (`openai/gpt-oss-120b`) + Guardián SQL**:
+   - FastAPI actúa como orquestador seguro: Groq traduce preguntas de negocio a una única consulta `SELECT`/`WITH` sobre `DATAFINANCE.PUBLIC.*`. El guardián [sql_guard.py](file:///home/cohorte5/Escritorio/proyecto%20/backend/sql_guard.py) bloquea cualquier comando destructivo, inyecciones, o acceso a esquemas no autorizados.
 4. **Mes parcial excluido por defecto de agregaciones globales y anomalías**:
-   - Los meses con fecha máxima inferior al día 28 (`DAY(MAX(FECHA)) < 28`) se excluyen de `GOLD.ANOMALIAS` y del filtro por defecto del dashboard para evitar falsos positivos de caída de ingresos al iniciar un mes.
+   - Los meses con fecha máxima inferior al día 28 se marcan como mes parcial (`ES_COMPLETO = FALSE`) para evitar falsos positivos de caídas de ingresos o variaciones distorsionadas al inicio de un mes.

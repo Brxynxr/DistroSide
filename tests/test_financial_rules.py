@@ -28,7 +28,7 @@ def test_formulas_utilidad_margen_y_division_cero():
 
 def test_sql_guard_permite_select_y_agrega_limit():
     sql = validar_sql_solo_lectura(
-        "```sql\nSELECT ANIO_MES, INGRESOS FROM DATAFINANCE.GOLD.KPI_MENSUAL ORDER BY INGRESOS DESC;\n```"
+        "```sql\nSELECT ANIO_MES, INGRESOS FROM DATAFINANCE.PUBLIC.KPI_MENSUAL ORDER BY INGRESOS DESC;\n```"
     )
     assert sql.startswith("SELECT ANIO_MES")
     assert "ORDER BY INGRESOS DESC" in sql
@@ -37,7 +37,7 @@ def test_sql_guard_permite_select_y_agrega_limit():
 
 def test_sql_guard_permite_cte_autorizado():
     sql = validar_sql_solo_lectura(
-        "WITH base AS (SELECT ANIO_MES, UTILIDAD FROM DATAFINANCE.GOLD.KPI_MENSUAL) "
+        "WITH base AS (SELECT ANIO_MES, UTILIDAD FROM DATAFINANCE.PUBLIC.KPI_MENSUAL) "
         "SELECT * FROM base LIMIT 12"
     )
     assert "FROM base" in sql
@@ -48,13 +48,15 @@ def test_sql_guard_permite_cte_autorizado():
     "sql_inseguro",
     [
         "",
-        "DELETE FROM DATAFINANCE.GOLD.KPI_MENSUAL",
-        "DROP TABLE DATAFINANCE.SILVER.TRANSACCIONES",
+        "DELETE FROM DATAFINANCE.PUBLIC.KPI_MENSUAL",
+        "DROP TABLE DATAFINANCE.PUBLIC.TRANSACCIONES",
         "SELECT * FROM DATAFINANCE.BRONZE.TRANSACCIONES",
+        "SELECT * FROM DATAFINANCE.SILVER.TRANSACCIONES",
+        "SELECT * FROM DATAFINANCE.GOLD.KPI_MENSUAL",
         "SELECT * FROM SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY",
         "SELECT * FROM INFORMATION_SCHEMA.TABLES",
-        "SELECT 1 FROM DATAFINANCE.GOLD.KPI_MENSUAL; DROP TABLE DATAFINANCE.GOLD.KPI_MENSUAL",
-        "DESC TABLE DATAFINANCE.GOLD.KPI_MENSUAL",
+        "SELECT 1 FROM DATAFINANCE.PUBLIC.KPI_MENSUAL; DROP TABLE DATAFINANCE.PUBLIC.KPI_MENSUAL",
+        "DESC TABLE DATAFINANCE.PUBLIC.KPI_MENSUAL",
         "SELECT * FROM DATAFINANCE.OTRO_ESQUEMA.SECRETO",
     ],
 )
@@ -65,12 +67,12 @@ def test_sql_guard_bloquea_consultas_no_autorizadas(sql_inseguro):
 
 def test_extractor_sql_desde_json_o_texto():
     assert (
-        _extraer_sql_de_respuesta('{"sql": "SELECT 1 FROM DATAFINANCE.GOLD.KPI_MENSUAL"}')
-        == "SELECT 1 FROM DATAFINANCE.GOLD.KPI_MENSUAL"
+        _extraer_sql_de_respuesta('{"sql": "SELECT 1 FROM DATAFINANCE.PUBLIC.KPI_MENSUAL"}')
+        == "SELECT 1 FROM DATAFINANCE.PUBLIC.KPI_MENSUAL"
     )
     assert (
-        _extraer_sql_de_respuesta('Texto previo {"sql": "SELECT ANIO_MES FROM GOLD.KPI_MENSUAL"} fin')
-        == "SELECT ANIO_MES FROM GOLD.KPI_MENSUAL"
+        _extraer_sql_de_respuesta('Texto previo {"sql": "SELECT ANIO_MES FROM PUBLIC.KPI_MENSUAL"} fin')
+        == "SELECT ANIO_MES FROM PUBLIC.KPI_MENSUAL"
     )
 
 
@@ -96,3 +98,24 @@ def test_endpoint_kpis_maneja_periodo_sin_datos(monkeypatch):
     assert res["resumen"]["margen_pct"] == 0.0
     assert res["resumen"]["periodo_desde"] is None
     assert res["mensual"] == []
+
+
+def test_generacion_y_descarga_pdf_reporte():
+    client = TestClient(app)
+    payload = {
+        "periodo_desde": "2026-01",
+        "periodo_hasta": "2026-03",
+        "modelo": "test-model",
+        "reporte_texto": "## Resumen\nTexto de prueba para el informe.\n- Viñeta 1\n- Viñeta 2",
+        "resumen_sql": {
+            "ingresos_totales": 600000000,
+            "gastos_totales": 450000000,
+            "utilidad_total": 150000000,
+            "margen_pct": 25.0,
+        },
+    }
+    resp = client.post("/api/reportes/descargar-pdf", json=payload)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content.startswith(b"%PDF")
+    assert len(resp.content) > 1000

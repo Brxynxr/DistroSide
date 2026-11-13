@@ -12,12 +12,6 @@ __pycache__/
 # Datos locales generados (se regeneran con scripts/generar_dataset.py)
 data/
 
-# Airflow local
-airflow/logs/
-airflow/*.pid
-airflow/*.err
-airflow/*.log
-
 # Frontend React / Vite
 frontend/node_modules/
 frontend/dist/

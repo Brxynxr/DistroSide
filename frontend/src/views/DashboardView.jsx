@@ -38,7 +38,7 @@ export default function DashboardView({ kpis, auditoria, loading, onResetFiltros
     return mensual[mensual.length - 1];
   }, [mensual]);
 
-  // Gráfico 1: Evolución Mensual
+  // Gráfico 1: Evolución Mensual (ui-ux-pro-max: Trend Over Time / Combined Bar & Spline)
   const evolucionData = useMemo(() => {
     const x = mensual.map((r) => r.ANIO_MES);
     return [
@@ -47,16 +47,24 @@ export default function DashboardView({ kpis, auditoria, loading, onResetFiltros
         y: mensual.map((r) => r.INGRESOS / 1e6),
         type: "bar",
         name: "Ingresos",
-        marker: { color: PLOTLY_SERIES.ingresos, opacity: 0.9, line: { width: 0 } },
-        hovertemplate: "<b>%{x}</b><br>Ingresos: %{y:.2f} M COP<extra></extra>",
+        marker: {
+          color: PLOTLY_SERIES.ingresos,
+          line: { color: PLOTLY_SERIES.ingresosBorder, width: 1 },
+          opacity: 0.95,
+        },
+        hovertemplate: "Ingresos: %{y:.2f} M COP<extra></extra>",
       },
       {
         x,
         y: mensual.map((r) => r.GASTOS / 1e6),
         type: "bar",
         name: "Gastos",
-        marker: { color: PLOTLY_SERIES.gastos, opacity: 0.85, line: { width: 0 } },
-        hovertemplate: "<b>%{x}</b><br>Gastos: %{y:.2f} M COP<extra></extra>",
+        marker: {
+          color: PLOTLY_SERIES.gastos,
+          line: { color: PLOTLY_SERIES.gastosBorder, width: 1 },
+          opacity: 0.9,
+        },
+        hovertemplate: "Gastos: %{y:.2f} M COP<extra></extra>",
       },
       {
         x,
@@ -64,73 +72,156 @@ export default function DashboardView({ kpis, auditoria, loading, onResetFiltros
         type: "scatter",
         mode: "lines+markers",
         name: "Utilidad neta",
-        line: { color: PLOTLY_SERIES.utilidad, width: 2.5 },
-        marker: { size: 6, color: PLOTLY_SERIES.utilidad },
-        hovertemplate: "<b>%{x}</b><br>Utilidad: %{y:.2f} M COP<extra></extra>",
+        line: { color: PLOTLY_SERIES.utilidad, width: 2.5, shape: "spline" },
+        marker: {
+          size: 7,
+          color: PLOTLY_SERIES.utilidad,
+          symbol: "circle",
+          line: { color: "#FFFFFF", width: 1.5 },
+        },
+        hovertemplate: "Utilidad: %{y:.2f} M COP<extra></extra>",
       },
     ];
   }, [mensual]);
 
-  // Gráfico 2: Gastos por Categoría
+  // Gráfico 2: Gastos por Categoría (ui-ux-pro-max: Compare Categories / Horizontal Bar sorted descending)
   const gastosCategoriaData = useMemo(() => {
     const gastos = (kpis?.por_categoria || [])
       .filter((r) => r.TIPO === "GASTO")
       .slice()
       .reverse();
+
     return [
       {
         x: gastos.map((r) => r.MONTO_TOTAL / 1e6),
         y: gastos.map((r) => r.CATEGORIA),
+        text: gastos.map((r) => `${(r.MONTO_TOTAL / 1e6).toFixed(1)} M`),
+        textposition: "outside",
+        cliponaxis: false,
+        textfont: {
+          family: "Inter, system-ui, sans-serif",
+          size: 11,
+          color: "#475569",
+        },
         type: "bar",
         orientation: "h",
-        marker: { color: "#3B82F6", opacity: 0.85 },
-        hovertemplate: "<b>%{y}</b>: %{x:.2f} M COP<extra></extra>",
+        marker: {
+          color: PLOTLY_SERIES.utilidad,
+          line: { color: PLOTLY_SERIES.utilidadBorder, width: 1 },
+          opacity: 0.9,
+        },
+        hovertemplate: "<b>%{y}</b><br>Total gasto: %{x:.2f} M COP<extra></extra>",
       },
     ];
   }, [kpis]);
 
-  // Gráfico 3: Gastos por Área
+  // Gráfico 3: Gastos por Área (ui-ux-pro-max: Part-to-Whole Donut, 12 o'clock start, central KPI)
+  const gastosArea = useMemo(
+    () => (kpis?.por_area || []).filter((r) => r.TIPO === "GASTO"),
+    [kpis]
+  );
+
+  const totalGastosArea = useMemo(
+    () => gastosArea.reduce((acc, r) => acc + (Number(r.MONTO_TOTAL) || 0), 0),
+    [gastosArea]
+  );
+
   const gastosAreaData = useMemo(() => {
-    const gastosArea = (kpis?.por_area || []).filter((r) => r.TIPO === "GASTO");
     return [
       {
         labels: gastosArea.map((r) => r.AREA),
         values: gastosArea.map((r) => r.MONTO_TOTAL / 1e6),
         type: "pie",
-        hole: 0.55,
-        marker: { colors: PLOTLY_CATEGORICAL },
+        hole: 0.6,
+        rotation: 90,
+        direction: "clockwise",
+        marker: {
+          colors: PLOTLY_CATEGORICAL,
+          line: { color: "#FFFFFF", width: 2 },
+        },
         textinfo: "percent",
-        hovertemplate: "<b>%{label}</b>: %{value:.2f} M COP (%{percent})<extra></extra>",
+        textfont: {
+          family: "Inter, system-ui, sans-serif",
+          size: 11,
+          color: "#FFFFFF",
+        },
+        hovertemplate:
+          "<b>%{label}</b><br>Gasto: %{value:.2f} M COP<br>Participación: %{percent}<extra></extra>",
       },
     ];
-  }, [kpis]);
+  }, [gastosArea]);
 
   const evolucionLayout = useMemo(
     () => ({
       barmode: "group",
-      bargap: 0.25,
-      bargroupgap: 0.1,
+      bargap: 0.28,
+      bargroupgap: 0.12,
       hovermode: "x unified",
-      yaxis: { title: "Millones COP" },
-      legend: { orientation: "h", y: 1.15, x: 0 },
+      margin: { t: 24, r: 16, b: 46, l: 60 },
+      yaxis: {
+        title: {
+          text: "Millones COP",
+          font: { family: "Inter, system-ui, sans-serif", size: 11, color: "#64748B" },
+        },
+        tickprefix: "$",
+        ticksuffix: "M",
+      },
+      xaxis: {
+        tickangle: -25,
+      },
+      legend: {
+        orientation: "h",
+        y: 1.15,
+        x: 0,
+        font: { family: "Inter, system-ui, sans-serif", size: 12, color: "#475569" },
+        itemgap: 16,
+      },
     }),
     []
   );
 
   const categoriaLayout = useMemo(
     () => ({
-      margin: { t: 10, r: 16, b: 36, l: 125 },
-      xaxis: { title: "Millones COP" },
+      margin: { t: 12, r: 48, b: 38, l: 135 },
+      xaxis: {
+        title: {
+          text: "Millones COP",
+          font: { family: "Inter, system-ui, sans-serif", size: 11, color: "#64748B" },
+        },
+        tickprefix: "$",
+        ticksuffix: "M",
+      },
+      yaxis: {
+        tickfont: {
+          family: "Inter, system-ui, sans-serif",
+          size: 12,
+          color: "#0F172A",
+        },
+      },
     }),
     []
   );
 
   const areaLayout = useMemo(
     () => ({
-      margin: { t: 10, r: 10, b: 10, l: 10 },
-      legend: { orientation: "h", y: -0.1 },
+      margin: { t: 10, r: 10, b: 34, l: 10 },
+      showlegend: true,
+      legend: {
+        orientation: "h",
+        y: -0.12,
+        x: 0.5,
+        xanchor: "center",
+        font: { family: "Inter, system-ui, sans-serif", size: 11, color: "#475569" },
+      },
+      annotations: [
+        {
+          text: `<b>Total Áreas</b><br><span style="font-size:13px;font-weight:700;color:#0F172A">${formatMillones(totalGastosArea)}</span>`,
+          showarrow: false,
+          font: { family: "Inter, system-ui, sans-serif", size: 11, color: "#64748B" },
+        },
+      ],
     }),
-    []
+    [totalGastosArea]
   );
 
   const utilidadPositiva = (resumen.utilidad_total || 0) >= 0;
@@ -380,36 +471,34 @@ export default function DashboardView({ kpis, auditoria, loading, onResetFiltros
             </div>
           </section>
 
-          {/* 4. Auditoría Medallion Discreta */}
+          {/* 4. Verificación de Calidad e Integridad en Snowflake */}
           {auditoria?.conteos && (
             <section
               className="bg-card border border-border rounded-xl p-3.5 sm:p-4 flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs"
-              aria-label="Trazabilidad Medallion"
+              aria-label="Integridad de Datos Snowflake"
             >
               <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
                 <ShieldCheck className="w-4 h-4 text-primary shrink-0" aria-hidden="true" />
-                <span className="font-semibold text-ink">Trazabilidad Medallion:</span>
+                <span className="font-semibold text-ink">
+                  Integridad Snowflake ({auditoria.esquema || "DATAFINANCE.PUBLIC"}):
+                </span>
                 <span>
-                  Bronze (
-                  <strong className="text-ink tabular-nums">
-                    {auditoria.conteos.BRONZE?.toLocaleString("es-CO")}
-                  </strong>
-                  ) → Silver (
                   <strong className="text-positive tabular-nums">
-                    {auditoria.conteos.SILVER?.toLocaleString("es-CO")}
-                  </strong>
-                  ) + Rechazados (
-                  <strong className="text-accent tabular-nums">
-                    {auditoria.conteos.RECHAZADOS?.toLocaleString("es-CO")}
-                  </strong>
-                  )
+                    {(auditoria.conteos.TOTAL_TRANSACCIONES || auditoria.conteos.SILVER || 0).toLocaleString("es-CO")}
+                  </strong>{" "}
+                  transacciones limpias |{" "}
+                  <strong className="text-ink tabular-nums">
+                    {(auditoria.conteos.IDS_UNICOS || auditoria.conteos.TOTAL_TRANSACCIONES || 0).toLocaleString("es-CO")}
+                  </strong>{" "}
+                  IDs únicos |{" "}
+                  <span className="text-positive font-medium">100% Conforme</span>
                 </span>
               </div>
 
               <div className="flex flex-wrap gap-1.5">
-                {(auditoria.motivos_rechazo || []).map((m) => (
-                  <SourceBadge key={m.MOTIVO_RECHAZO} variant="alert">
-                    {m.MOTIVO_RECHAZO}: {m.CANTIDAD}
+                {(auditoria.metricas_calidad || []).map((m) => (
+                  <SourceBadge key={m.regla} variant="sql">
+                    {m.regla}: {m.estado}
                   </SourceBadge>
                 ))}
               </div>

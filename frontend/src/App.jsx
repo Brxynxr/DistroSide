@@ -137,7 +137,7 @@ export default function App() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Error consultando al analista");
-      setMensajes((prev) => [data, ...prev]);
+      setMensajes((prev) => [...prev, data]);
       if (!texto) setPregunta("");
     } catch (err) {
       setErrorChat(err.message);
@@ -146,19 +146,74 @@ export default function App() {
     }
   };
 
-  const generarReporteAirflow = async () => {
+  const generarReporteSnowflake = async () => {
     setLoadingReporte(true);
     setMsgReporte("");
     try {
-      const res = await fetch("/api/reportes/generar-airflow", { method: "POST" });
+      const res = await fetch("/api/reportes/generar-snowflake", { method: "POST" });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "No se pudo disparar Airflow");
-      setMsgReporte(`${data.mensaje} (Run: ${data.dag_run_id})`);
-      setTimeout(() => cargarSecundarios(true), 8000);
+      if (!res.ok) throw new Error(data.detail || "No se pudo generar el reporte en Snowflake");
+      setMsgReporte(data.mensaje || "Reporte generado en Snowflake con éxito.");
+      await cargarSecundarios(true);
     } catch (err) {
       setMsgReporte(`Error: ${err.message}`);
     } finally {
       setLoadingReporte(false);
+    }
+  };
+
+  const descargarPdfBajoDemanda = async (rep) => {
+    if (!rep) return;
+    try {
+      const res = await fetch("/api/reportes/descargar-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          periodo_desde: rep.periodo_desde,
+          periodo_hasta: rep.periodo_hasta,
+          modelo: rep.modelo,
+          reporte_texto: rep.reporte_texto,
+          resumen_sql: rep.resumen_sql,
+          por_categoria: rep.por_categoria,
+          mensual: rep.mensual,
+        }),
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || "Error al descargar el PDF");
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Informe_Financiero_${rep.periodo_desde}_${rep.periodo_hasta}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    } catch (err) {
+      setMsgReporte(`Error al descargar PDF: ${err.message}`);
+    }
+  };
+
+  const descargarPdfOficial = async (idReporte) => {
+    try {
+      const res = await fetch(`/api/reportes/${idReporte}/descargar-pdf`);
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || "Error al descargar el PDF oficial");
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Informe_Financiero_Oficial_${idReporte}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    } catch (err) {
+      setMsgReporte(`Error al descargar PDF oficial: ${err.message}`);
     }
   };
 
@@ -180,6 +235,8 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Error generando reporte con Groq");
       setReporteGroq(data);
+      setMsgReporte("Informe ejecutivo generado con éxito. Iniciando descarga en formato PDF...");
+      await descargarPdfBajoDemanda(data);
     } catch (err) {
       setMsgReporte(`Error: ${err.message}`);
     } finally {
@@ -221,14 +278,25 @@ export default function App() {
 
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Header Principal Compacto, Elegante y Limpio */}
-        <header className="sticky top-0 z-header bg-card/90 backdrop-blur-md border-b border-border/80 px-4 sm:px-6 py-3.5 shadow-xs">
+        <header className="sticky top-0 z-20 bg-card/90 backdrop-blur-md border-b border-border/80 px-4 sm:px-6 py-3.5 shadow-xs">
           <div className="max-w-[1380px] mx-auto flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-start gap-3 min-w-0">
               <button
                 type="button"
-                onClick={() => setMobileMenuOpen(true)}
-                className="lg:hidden mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-ink hover:bg-muted cursor-pointer focus-visible:outline-2 focus-visible:outline-primary shadow-xs"
-                aria-label="Abrir menú de navegación"
+                onClick={() => {
+                  if (typeof window !== "undefined" && window.innerWidth >= 1024) {
+                    setSidebarCollapsed((c) => !c);
+                  } else {
+                    setMobileMenuOpen((o) => !o);
+                  }
+                }}
+                className="mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-ink hover:bg-muted cursor-pointer focus-visible:outline-2 focus-visible:outline-primary shadow-xs transition-colors shrink-0"
+                aria-label={
+                  mobileMenuOpen
+                    ? "Cerrar menú de navegación"
+                    : "Alternar menú de navegación"
+                }
+                title="Alternar menú de navegación"
               >
                 <Menu className="w-4 h-4" />
               </button>
@@ -285,7 +353,13 @@ export default function App() {
         </header>
 
         {/* Área de Contenido */}
-        <main className="flex-1 px-4 sm:px-6 py-5 max-w-[1380px] w-full mx-auto space-y-4 sm:space-y-5">
+        <main
+          className={`flex-1 px-3 sm:px-6 py-3 sm:py-4 max-w-[1400px] w-full mx-auto ${
+            tab === "chat"
+              ? "flex flex-col h-[calc(100dvh-4.75rem)] min-h-[550px]"
+              : "space-y-4 sm:space-y-5"
+          }`}
+        >
           {errorGlobal && (
             <AlertBanner type="error" title="Error de conexión con Snowflake">
               {errorGlobal}
@@ -338,6 +412,7 @@ export default function App() {
               error={errorChat}
               onChangePregunta={setPregunta}
               onEnviarPregunta={enviarPregunta}
+              onLimpiarChat={() => setMensajes([])}
             />
           )}
 
@@ -350,8 +425,10 @@ export default function App() {
               reportes={reportes}
               loadingReporte={loadingReporte}
               msgReporte={msgReporte}
-              onGenerarAirflow={generarReporteAirflow}
+              onGenerarSnowflake={generarReporteSnowflake}
               onGenerarGroq={generarReporteGroq}
+              onDescargarPdfBajoDemanda={descargarPdfBajoDemanda}
+              onDescargarPdfOficial={descargarPdfOficial}
             />
           )}
         </main>

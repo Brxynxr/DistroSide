@@ -55,26 +55,123 @@ export default function AnomaliesView({ anomalias }) {
     return [
       {
         x: ordenadas.map((a) => `${a.ANIO_MES} · ${a.CATEGORIA}`),
-        y: ordenadas.map((a) => a.Z_SCORE),
+        y: ordenadas.map((a) => Number(a.Z_SCORE) || 0),
+        text: ordenadas.map((a) => `${(Number(a.Z_SCORE) || 0).toFixed(1)}σ`),
+        textposition: "outside",
+        cliponaxis: false,
+        textfont: {
+          family: "Inter, system-ui, sans-serif",
+          size: 10,
+          color: "#475569",
+        },
         type: "bar",
         marker: {
           color: ordenadas.map((a) =>
             Math.abs(Number(a.Z_SCORE) || 0) >= 3.5
-              ? PLOTLY_SERIES.gastos
+              ? PLOTLY_SERIES.critica
               : PLOTLY_SERIES.alerta
           ),
+          line: {
+            color: ordenadas.map((a) =>
+              Math.abs(Number(a.Z_SCORE) || 0) >= 3.5
+                ? PLOTLY_SERIES.criticaBorder
+                : PLOTLY_SERIES.alertaBorder
+            ),
+            width: 1,
+          },
           opacity: 0.9,
-          line: { width: 0 },
         },
-        hovertemplate: "<b>%{x}</b><br>Z-Score: %{y:.2f} σ<extra></extra>",
+        customdata: ordenadas.map((a) => [
+          obtenerGravedad(a.Z_SCORE).label,
+          formatMillones(a.VALOR_OBSERVADO),
+          formatMillones(a.VALOR_ESPERADO),
+          a.TIPO_ANOMALIA,
+        ]),
+        hovertemplate:
+          "<b>%{x}</b><br>Gravedad: %{customdata[0]}<br>Z-Score: %{y:.2f} σ<br>Observado: %{customdata[1]}<br>Esperado: %{customdata[2]}<extra></extra>",
       },
     ];
   }, [filtradas]);
 
   const chartLayout = useMemo(
     () => ({
-      yaxis: { title: "Z-Score (desviaciones estándar σ)" },
-      margin: { t: 16, r: 16, b: 105, l: 56 },
+      margin: { t: 28, r: 24, b: 100, l: 60 },
+      yaxis: {
+        title: {
+          text: "Z-Score (Desviación σ)",
+          font: { family: "Inter, system-ui, sans-serif", size: 11, color: "#64748B" },
+        },
+        ticksuffix: "σ",
+        zeroline: true,
+        zerolinecolor: "#94A3B8",
+        zerolinewidth: 1.5,
+      },
+      xaxis: {
+        tickangle: -30,
+        tickfont: {
+          family: "Inter, system-ui, sans-serif",
+          size: 11,
+          color: "#475569",
+        },
+      },
+      shapes: [
+        {
+          type: "line",
+          xref: "paper",
+          x0: 0,
+          x1: 1,
+          y0: 3.5,
+          y1: 3.5,
+          line: {
+            color: PLOTLY_SERIES.critica,
+            width: 1.5,
+            dash: "dot",
+          },
+        },
+        {
+          type: "line",
+          xref: "paper",
+          x0: 0,
+          x1: 1,
+          y0: 2.5,
+          y1: 2.5,
+          line: {
+            color: PLOTLY_SERIES.alerta,
+            width: 1.5,
+            dash: "dot",
+          },
+        },
+      ],
+      annotations: [
+        {
+          xref: "paper",
+          x: 1,
+          y: 3.5,
+          xanchor: "right",
+          yanchor: "bottom",
+          text: "Umbral Crítico (3.5σ)",
+          showarrow: false,
+          font: {
+            family: "Inter, system-ui, sans-serif",
+            size: 10,
+            color: PLOTLY_SERIES.critica,
+          },
+        },
+        {
+          xref: "paper",
+          x: 1,
+          y: 2.5,
+          xanchor: "right",
+          yanchor: "bottom",
+          text: "Umbral Advertencia (2.5σ)",
+          showarrow: false,
+          font: {
+            family: "Inter, system-ui, sans-serif",
+            size: 10,
+            color: PLOTLY_SERIES.alerta,
+          },
+        },
+      ],
     }),
     []
   );

@@ -5,20 +5,24 @@ from __future__ import annotations
 import re
 
 TABLAS_AUTORIZADAS = {
-    "DATAFINANCE.GOLD.KPI_MENSUAL",
-    "DATAFINANCE.GOLD.KPI_CATEGORIA_MENSUAL",
-    "DATAFINANCE.GOLD.KPI_AREA_MENSUAL",
-    "DATAFINANCE.GOLD.ANOMALIAS",
-    "DATAFINANCE.GOLD.REPORTES",
-    "DATAFINANCE.SILVER.TRANSACCIONES",
-    "DATAFINANCE.SILVER.TRANSACCIONES_RECHAZADOS",
-    "GOLD.KPI_MENSUAL",
-    "GOLD.KPI_CATEGORIA_MENSUAL",
-    "GOLD.KPI_AREA_MENSUAL",
-    "GOLD.ANOMALIAS",
-    "GOLD.REPORTES",
-    "SILVER.TRANSACCIONES",
-    "SILVER.TRANSACCIONES_RECHAZADOS",
+    "DATAFINANCE.PUBLIC.TRANSACCIONES",
+    "DATAFINANCE.PUBLIC.KPI_MENSUAL",
+    "DATAFINANCE.PUBLIC.KPI_CATEGORIA_MENSUAL",
+    "DATAFINANCE.PUBLIC.KPI_AREA_MENSUAL",
+    "DATAFINANCE.PUBLIC.ANOMALIAS",
+    "DATAFINANCE.PUBLIC.REPORTES",
+    "PUBLIC.TRANSACCIONES",
+    "PUBLIC.KPI_MENSUAL",
+    "PUBLIC.KPI_CATEGORIA_MENSUAL",
+    "PUBLIC.KPI_AREA_MENSUAL",
+    "PUBLIC.ANOMALIAS",
+    "PUBLIC.REPORTES",
+    "TRANSACCIONES",
+    "KPI_MENSUAL",
+    "KPI_CATEGORIA_MENSUAL",
+    "KPI_AREA_MENSUAL",
+    "ANOMALIAS",
+    "REPORTES",
 }
 
 PALABRAS_PROHIBIDAS = re.compile(
@@ -72,8 +76,8 @@ def validar_sql_solo_lectura(sql_raw: str, max_limit: int = 200) -> str:
     if "SNOWFLAKE." in sin_comentarios.upper() or "INFORMATION_SCHEMA" in sin_comentarios.upper():
         raise ValueError("Acceso denegado a esquemas del sistema.")
 
-    if "BRONZE" in sin_comentarios.upper():
-        raise ValueError("Las consultas analíticas deben leer únicamente de SILVER o GOLD.")
+    if any(k in sin_comentarios.upper() for k in ["BRONZE", "SILVER", "GOLD"]):
+        raise ValueError("Esquema no autorizado. Todas las tablas analíticas residen en DATAFINANCE.PUBLIC.")
 
     ctes = _extraer_nombres_cte(sin_comentarios)
     tablas = REFERENCIA_TABLA_RE.findall(sin_comentarios)
@@ -86,7 +90,7 @@ def validar_sql_solo_lectura(sql_raw: str, max_limit: int = 200) -> str:
             continue
         if limpia not in TABLAS_AUTORIZADAS:
             raise ValueError(
-                f"Tabla no autorizada: '{limpia}'. Solo se permite consultar DATAFINANCE.GOLD.* o DATAFINANCE.SILVER.TRANSACCIONES."
+                f"Tabla no autorizada: '{limpia}'. Solo se permite consultar tablas de DATAFINANCE.PUBLIC."
             )
 
     if not re.search(r"\bLIMIT\s+\d+\b", sin_comentarios, re.IGNORECASE):

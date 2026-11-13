@@ -1,6 +1,6 @@
 # DataFinance AI — Distribuidora del Caribe S.A.S.
 
-Plataforma académica de análisis financiero sobre **Snowflake (Medallion Bronze/Silver/Gold)**, orquestada con **Apache Airflow en Docker**, backend en **FastAPI**, analista en lenguaje natural con **Groq (`openai/gpt-oss-120b`)** + **Snowflake AISQL (`AI_AGG`)**, y frontend en **React + Tailwind CSS v4 + Plotly.js**.
+Plataforma académica de análisis financiero sobre **Snowflake (`DATAFINANCE.PUBLIC`)**, ejecutor SQL directo en Python, backend en **FastAPI** con generación de reportes ejecutivos en PDF (**ReportLab**), analista Text-to-SQL en lenguaje natural con **Groq (`openai/gpt-oss-120b`)** + **Snowflake AISQL (`AI_AGG`)**, y frontend interactivo en **React + Tailwind CSS v4 + Plotly.js**.
 
 > **Principio rector:** *SQL calcula; la IA explica.* Toda cifra financiera proviene de consultas reproducibles en Snowflake; los modelos de IA no recalculan ni inventan indicadores.
 
@@ -9,19 +9,20 @@ Plataforma académica de análisis financiero sobre **Snowflake (Medallion Bronz
 ## Estructura del proyecto
 
 - `scripts/`
-  - [`generar_dataset.py`](scripts/generar_dataset.py): generador sintético reproducible (24 meses + carga incremental diaria idempotente) y cargador hacia `BRONZE.TRANSACCIONES`.
-  - [`ejecutar_sql.py`](scripts/ejecutar_sql.py): ejecutor CLI de archivos SQL sobre Snowflake.
-  - [`evaluar_agente.py`](scripts/evaluar_agente.py): benchmark automático de 16 preguntas contra Snowflake + Groq.
-- `airflow/`
-  - [`dags/datafinance_etl.py`](airflow/dags/datafinance_etl.py): pipeline diario `Bronze → Silver → Validación → Gold → Anomalías`.
-  - [`dags/datafinance_reporte.py`](airflow/dags/datafinance_reporte.py): DAG manual (`schedule=None`) de redacción ejecutiva con `AI_AGG`.
-  - `dags/sql/`: transformaciones y validaciones SQL ejecutadas en Snowflake.
+  - [`generar_dataset.py`](scripts/generar_dataset.py): generador sintético reproducible (24 meses + carga incremental diaria idempotente).
+  - [`ejecutar_sql.py`](scripts/ejecutar_sql.py): ejecutor CLI de scripts DDL/DML y verificador de integridad en Snowflake.
+  - [`evaluar_agente.py`](scripts/evaluar_agente.py): benchmark automático de 16 preguntas de negocio contra Snowflake + Groq.
+- `snowflake/sql/`
+  - [`schema.sql`](snowflake/sql/schema.sql): definición del esquema consolidado (`PUBLIC.TRANSACCIONES`, `KPI_MENSUAL`, vistas y tablas de soporte).
+  - [`anomalias.sql`](snowflake/sql/anomalias.sql): detección estadística de anomalías (Z-Score sobre meses completos).
+  - [`reporte.sql`](snowflake/sql/reporte.sql): generación de narrativas ejecutivas con Snowflake `AI_AGG`.
 - `backend/`
   - [`main.py`](backend/main.py): API REST (`/api/health`, `/api/kpis`, `/api/anomalias`, `/api/auditoria`, `/api/chat`, `/api/reportes*`).
-  - [`sql_guard.py`](backend/sql_guard.py): validador estricto de solo lectura (`SELECT`/`WITH`) restringido a `GOLD.*` y `SILVER.TRANSACCIONES`.
-  - [`groq_analyst.py`](backend/groq_analyst.py): cliente Groq para Text-to-SQL validado y explicación en español.
+  - [`sql_guard.py`](backend/sql_guard.py): validador estricto de solo lectura (`SELECT`/`WITH`) restringido a `DATAFINANCE.PUBLIC.*`.
+  - [`groq_analyst.py`](backend/groq_analyst.py): cliente Groq para Text-to-SQL validado y explicación financiera en español.
+  - [`report_pdf.py`](backend/report_pdf.py): motor generador de informes ejecutivos en formato PDF profesional con ReportLab.
 - `frontend/`: aplicación React 18 + Vite + Tailwind CSS v4 + Plotly.js siguiendo [`MASTER.md`](design-system/datafinance-ai/MASTER.md).
-- `tests/`: pruebas unitarias con `pytest` (`test_generator.py`, `test_data_quality.py`, `test_financial_rules.py`).
+- `tests/`: 23 pruebas unitarias con `pytest` (`test_generator.py`, `test_data_quality.py`, `test_financial_rules.py`).
 - `docs/`: [`architecture.md`](docs/architecture.md) y [`data_dictionary.md`](docs/data_dictionary.md).
 
 ---
@@ -37,9 +38,9 @@ Plataforma académica de análisis financiero sobre **Snowflake (Medallion Bronz
    python3 -m venv .venv
    .venv/bin/pip install -r requirements.txt
    ```
-3. Levanta Airflow en Docker (`http://localhost:8082`):
+3. Ejecutar transformaciones SQL en Snowflake si se requiere reprocesar:
    ```bash
-   docker compose up -d
+   .venv/bin/python scripts/ejecutar_sql.py
    ```
 4. Levanta el backend FastAPI (`http://127.0.0.1:8002`) y el frontend React (`http://127.0.0.1:5173`):
    ```bash

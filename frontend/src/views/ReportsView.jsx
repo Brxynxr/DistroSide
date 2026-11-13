@@ -2,16 +2,17 @@ import { useState } from "react";
 import {
   Building2,
   Check,
-  Coins,
+  ChevronDown,
+  ChevronUp,
   Copy,
   CreditCard,
   DollarSign,
+  Eye,
+  EyeOff,
+  FileDown,
   FileText,
   Percent,
   RefreshCw,
-  Sparkles,
-  TrendingDown,
-  TrendingUp,
   Wallet,
 } from "lucide-react";
 import MarkdownRenderer from "../components/MarkdownRenderer.jsx";
@@ -22,7 +23,7 @@ import EmptyState from "../components/ui/EmptyState.jsx";
 import { formatMillones } from "../utils/formatters.js";
 
 /**
- * Vista 4: Reportes Ejecutivos — Contexto numérico de referencia + narrativas IA formateadas.
+ * Vista: Reportes Ejecutivos — Generación y descarga directa en formato PDF ejecutivo.
  */
 export default function ReportsView({
   kpis,
@@ -30,11 +31,17 @@ export default function ReportsView({
   reportes,
   loadingReporte,
   msgReporte,
-  onGenerarAirflow,
+  onGenerarSnowflake,
   onGenerarGroq,
+  onDescargarPdfBajoDemanda,
+  onDescargarPdfOficial,
 }) {
   const [copiadoId, setCopiadoId] = useState(null);
-  const isError = msgReporte.startsWith("Error:");
+  const [verPreviewGroq, setVerPreviewGroq] = useState(false);
+  const [previewAbiertoId, setPreviewAbiertoId] = useState(null);
+  const [descargandoId, setDescargandoId] = useState(null);
+
+  const isError = msgReporte?.startsWith("Error:");
   const resumen = kpis?.resumen || {};
 
   const copiarTexto = async (id, texto) => {
@@ -43,13 +50,40 @@ export default function ReportsView({
       setCopiadoId(id);
       setTimeout(() => setCopiadoId(null), 1800);
     } catch {
-      // Sin permiso de portapapeles; no interrumpir UI
+      // Sin permiso de portapapeles
     }
+  };
+
+  const handleDescargarBajoDemanda = async () => {
+    if (!reporteGroq) return;
+    setDescargandoId("groq");
+    try {
+      if (onDescargarPdfBajoDemanda) {
+        await onDescargarPdfBajoDemanda(reporteGroq);
+      }
+    } finally {
+      setDescargandoId(null);
+    }
+  };
+
+  const handleDescargarOficial = async (idReporte) => {
+    setDescargandoId(idReporte);
+    try {
+      if (onDescargarPdfOficial) {
+        await onDescargarPdfOficial(idReporte);
+      }
+    } finally {
+      setDescargandoId(null);
+    }
+  };
+
+  const togglePreviewOficial = (id) => {
+    setPreviewAbiertoId((prev) => (prev === id ? null : id));
   };
 
   return (
     <div className="space-y-4 sm:space-y-5">
-      {/* Barra de generación + contexto financiero del filtro */}
+      {/* Barra de generación y controles principales */}
       <section className="bg-card border border-border rounded-xl p-4 sm:p-5 shadow-xs space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 pb-3 border-b border-border/70">
           <div className="flex items-center gap-2.5">
@@ -58,10 +92,10 @@ export default function ReportsView({
             </div>
             <div>
               <h2 className="text-base font-semibold text-ink">
-                Generación y consulta de reportes ejecutivos
+                Generación y Descarga de Informes Financieros en PDF
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Persistidos en Snowflake vía Airflow (<code className="font-mono text-ink">AI_AGG</code>) o análisis instantáneo en Groq sobre filtros activos.
+                Genera informes ejecutivos con diseño corporativo oficial y descárgalos directamente en formato PDF.
               </p>
             </div>
           </div>
@@ -72,26 +106,27 @@ export default function ReportsView({
               size="md"
               icon={RefreshCw}
               disabled={loadingReporte}
-              onClick={onGenerarAirflow}
+              onClick={onGenerarSnowflake}
               className="shadow-xs"
+              title="Ejecuta y persiste el reporte en la capa GOLD de Snowflake"
             >
-              Disparar DAG Airflow (AI_AGG)
+              Persistir en Snowflake (AI_AGG)
             </Button>
 
             <Button
               variant="primary"
               size="md"
-              icon={Sparkles}
+              icon={FileDown}
               loading={loadingReporte}
               onClick={onGenerarGroq}
               className="shadow-xs"
             >
-              {loadingReporte ? "Generando reporte..." : "Analizar periodo filtrado (Groq)"}
+              {loadingReporte ? "Generando informe..." : "Generar y Descargar Informe PDF"}
             </Button>
           </div>
         </div>
 
-        {/* Cinta de indicadores base del periodo seleccionado */}
+        {/* Cinta de contexto cuantitativo del filtro */}
         {resumen.periodo_desde && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1 text-xs tabular-nums">
             <div className="p-3 rounded-lg bg-emerald-50/60 border border-emerald-100 flex items-center justify-between">
@@ -135,114 +170,186 @@ export default function ReportsView({
         )}
 
         {msgReporte && (
-          <AlertBanner type={isError ? "error" : "warning"}>{msgReporte}</AlertBanner>
+          <AlertBanner type={isError ? "error" : "success"}>{msgReporte}</AlertBanner>
         )}
       </section>
 
-      {/* Reporte generado bajo demanda con Groq */}
+      {/* Tarjeta de descarga del reporte recién generado */}
       {reporteGroq && (
-        <article className="bg-card border border-blue-200/90 rounded-xl p-5 sm:p-6 shadow-sm space-y-4 hover:border-blue-300 transition-colors">
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-border/80">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
-                <Sparkles className="w-4 h-4" aria-hidden="true" />
+        <section className="bg-gradient-to-r from-blue-50/80 via-white to-slate-50 border border-blue-200 rounded-xl p-5 sm:p-6 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-blue-100">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center shrink-0 shadow-xs">
+                <FileDown className="w-5 h-5" aria-hidden="true" />
               </div>
               <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-primary block">
-                  Informe Ejecutivo Bajo Demanda
-                </span>
-                <h3 className="text-[15px] font-bold text-ink mt-0.5 tabular-nums">
-                  Periodo analizado: {reporteGroq.periodo_desde} → {reporteGroq.periodo_hasta}
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    Listo para descargar
+                  </span>
+                  <SourceBadge variant="ai">{reporteGroq.modelo}</SourceBadge>
+                </div>
+                <h3 className="text-base font-bold text-ink mt-1">
+                  Informe Financiero Ejecutivo: {reporteGroq.periodo_desde} → {reporteGroq.periodo_hasta}
                 </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  El informe contiene la portada corporativa, tarjetas de métricas, distribución operativa y redacción analítica estructurada.
+                </p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <SourceBadge variant="ai" showIcon>
-                {reporteGroq.modelo}
-              </SourceBadge>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               <Button
-                size="sm"
+                variant="primary"
+                size="md"
+                icon={FileDown}
+                loading={descargandoId === "groq"}
+                onClick={handleDescargarBajoDemanda}
+                className="shadow-sm font-semibold"
+              >
+                Descargar PDF
+              </Button>
+
+              <Button
+                size="md"
+                variant="secondary"
+                icon={verPreviewGroq ? EyeOff : Eye}
+                onClick={() => setVerPreviewGroq(!verPreviewGroq)}
+                className="text-xs"
+              >
+                {verPreviewGroq ? "Ocultar texto" : "Vista previa en texto"}
+              </Button>
+
+              <Button
+                size="md"
                 variant="ghost"
                 icon={copiadoId === "groq" ? Check : Copy}
                 onClick={() => copiarTexto("groq", reporteGroq.reporte_texto)}
-                className="h-8 text-xs"
+                className="text-xs"
+                title="Copiar texto del reporte"
               >
-                {copiadoId === "groq" ? "Copiado" : "Copiar informe"}
+                {copiadoId === "groq" ? "Copiado" : "Copiar"}
               </Button>
             </div>
           </div>
 
-          <div className="bg-slate-50/70 rounded-xl p-5 border border-slate-200/80 border-l-4 border-l-primary shadow-xs">
-            <MarkdownRenderer content={reporteGroq.reporte_texto} />
-          </div>
-        </article>
+          {/* Vista previa colapsable para no invadir la pantalla */}
+          {verPreviewGroq && (
+            <div className="mt-3 bg-white rounded-xl p-5 border border-slate-200 shadow-inner space-y-2 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100 text-xs text-muted-foreground">
+                <span className="font-medium text-slate-700">Contenido textual del informe</span>
+                <span>Distribuidora del Caribe S.A.S.</span>
+              </div>
+              <MarkdownRenderer content={reporteGroq.reporte_texto} />
+            </div>
+          )}
+        </section>
       )}
 
-      {/* Reportes oficiales guardados en Snowflake GOLD.REPORTES */}
-      {reportes.length === 0 ? (
-        <EmptyState
-          icon={FileText}
-          title="No hay reportes persistidos en Snowflake"
-          description="Ejecuta el DAG datafinance_reporte desde Airflow o solicita un análisis inmediato del periodo filtrado arriba."
-        />
-      ) : (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between px-1">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+      {/* Historial de reportes oficiales guardados en Snowflake GOLD.REPORTES */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <div>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               Historial de reportes oficiales (Snowflake GOLD)
-            </span>
-            <span className="text-xs font-medium text-slate-500 tabular-nums">
-              {reportes.length} {reportes.length === 1 ? "reporte registrado" : "reportes registrados"}
-            </span>
+            </h3>
+            <p className="text-[11px] text-muted-foreground">
+              Informes persistidos auditables disponibles para consulta y descarga en PDF en cualquier momento.
+            </p>
           </div>
-
-          {reportes.map((rep) => (
-            <article
-              key={rep.ID_REPORTE}
-              className="bg-card border border-border rounded-xl p-5 sm:p-6 shadow-xs space-y-4 hover:border-slate-300 transition-colors"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-border/80">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 shrink-0">
-                    <Building2 className="w-4 h-4" aria-hidden="true" />
-                  </div>
-                  <div>
-                    <h3 className="text-[15px] font-bold text-ink tabular-nums">
-                      Reporte Oficial #{rep.ID_REPORTE} · {rep.PERIODO_DESDE} → {rep.PERIODO_HASTA}
-                    </h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Persistido en Snowflake GOLD.REPORTES con reproducibilidad total
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <SourceBadge variant="ai" showIcon>
-                    {rep.MODELO}
-                  </SourceBadge>
-                  <SourceBadge variant="sql">
-                    {new Date(rep.GENERADO_EN).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" })}
-                  </SourceBadge>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    icon={copiadoId === rep.ID_REPORTE ? Check : Copy}
-                    onClick={() => copiarTexto(rep.ID_REPORTE, rep.REPORTE_TEXTO)}
-                    className="h-8 text-xs"
-                  >
-                    {copiadoId === rep.ID_REPORTE ? "Copiado" : "Copiar reporte"}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="bg-slate-50/70 rounded-xl p-5 border border-slate-200/80 shadow-xs">
-                <MarkdownRenderer content={rep.REPORTE_TEXTO} />
-              </div>
-            </article>
-          ))}
+          <span className="text-xs font-medium text-slate-500 tabular-nums">
+            {reportes.length} {reportes.length === 1 ? "reporte registrado" : "reportes registrados"}
+          </span>
         </div>
-      )}
+
+        {reportes.length === 0 ? (
+          <EmptyState
+            icon={FileText}
+            title="No hay reportes persistidos en Snowflake"
+            description="Haz clic en 'Persistir en Snowflake' para compilar un reporte oficial o genera uno bajo demanda con el botón de arriba."
+          />
+        ) : (
+          <div className="space-y-3">
+            {reportes.map((rep) => {
+              const estaAbierto = previewAbiertoId === rep.ID_REPORTE;
+              return (
+                <article
+                  key={rep.ID_REPORTE}
+                  className="bg-card border border-border rounded-xl p-4 sm:p-5 shadow-xs hover:border-slate-300 transition-colors space-y-3"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 shrink-0">
+                        <Building2 className="w-4 h-4" aria-hidden="true" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-bold text-ink tabular-nums">
+                            Reporte Oficial #{rep.ID_REPORTE} · {rep.PERIODO_DESDE} → {rep.PERIODO_HASTA}
+                          </h4>
+                          <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                            Oficial
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Registrado en Snowflake GOLD · {new Date(rep.GENERADO_EN).toLocaleString("es-CO", { dateStyle: "short", timeStyle: "short" })}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <SourceBadge variant="ai" showIcon>
+                        {rep.MODELO}
+                      </SourceBadge>
+
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        icon={FileDown}
+                        loading={descargandoId === rep.ID_REPORTE}
+                        onClick={() => handleDescargarOficial(rep.ID_REPORTE)}
+                        className="h-8 text-xs font-medium"
+                      >
+                        Descargar PDF
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon={estaAbierto ? ChevronUp : ChevronDown}
+                        onClick={() => togglePreviewOficial(rep.ID_REPORTE)}
+                        className="h-8 text-xs"
+                      >
+                        {estaAbierto ? "Ocultar" : "Vista previa"}
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon={copiadoId === rep.ID_REPORTE ? Check : Copy}
+                        onClick={() => copiarTexto(rep.ID_REPORTE, rep.REPORTE_TEXTO)}
+                        className="h-8 text-xs"
+                        title="Copiar texto"
+                      >
+                        {copiadoId === rep.ID_REPORTE ? "Copiado" : "Copiar"}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Vista previa expandible por reporte */}
+                  {estaAbierto && (
+                    <div className="pt-3 border-t border-border/80">
+                      <div className="bg-slate-50/80 rounded-xl p-4 border border-slate-200/80 text-xs">
+                        <MarkdownRenderer content={rep.REPORTE_TEXTO} />
+                      </div>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

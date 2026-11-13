@@ -1,6 +1,5 @@
 """Pruebas de calidad de datos Silver y estructura estática de DAGs/SQL de Airflow."""
 
-import ast
 from datetime import date
 from pathlib import Path
 
@@ -73,12 +72,10 @@ def test_reglas_silver_no_descartan_silenciosamente():
     assert "DUPLICADO" in motivos_presentes
 
 
-def test_archivos_sql_y_dags_airflow_validos():
-    sql_dir = ROOT / "airflow" / "dags" / "sql"
+def test_archivos_sql_validos():
+    sql_dir = ROOT / "snowflake" / "sql"
     esperados = [
-        "silver_transacciones.sql",
-        "validar_silver.sql",
-        "gold_kpi_mensual.sql",
+        "schema.sql",
         "anomalias.sql",
         "reporte.sql",
     ]
@@ -86,14 +83,3 @@ def test_archivos_sql_y_dags_airflow_validos():
         ruta = sql_dir / nombre
         assert ruta.exists(), f"Falta archivo SQL requerido: {ruta}"
         assert ruta.read_text(encoding="utf-8").strip() != ""
-
-    # Verifica sintaxis AST y contratos críticos de ambos DAGs sin requerir Airflow runtime
-    etl_src = (ROOT / "airflow" / "dags" / "datafinance_etl.py").read_text(encoding="utf-8")
-    rep_src = (ROOT / "airflow" / "dags" / "datafinance_reporte.py").read_text(encoding="utf-8")
-    ast.parse(etl_src)
-    ast.parse(rep_src)
-
-    assert "cargar_bronze_task >> transformar_silver >> validar_silver >> construir_gold >> detectar_anomalias" in etl_src
-    assert "catchup=False" in etl_src
-    assert "schedule=None" in rep_src
-    assert "catchup=False" in rep_src

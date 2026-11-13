@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   AlertTriangle,
   BarChart3,
@@ -17,7 +18,8 @@ const NAV_ITEMS = [
 ];
 
 /**
- * Sidebar minimalista estilo Stripe/Linear/Ramp, colapsable en escritorio y drawer en móvil.
+ * Sidebar minimalista estilo Stripe/Linear/Ramp.
+ * Colapsable en escritorio y drawer accesible en móvil/tablet.
  */
 export default function Sidebar({
   activeTab,
@@ -29,8 +31,28 @@ export default function Sidebar({
   mobileOpen,
   onCloseMobile,
 }) {
-  const renderSidebarBody = (isCollapsedDesktop = false) => (
-    <div className="flex h-full flex-col justify-between bg-card text-ink p-3 select-none">
+  // Bloquear scroll de la página y cerrar con Escape cuando el drawer móvil está abierto
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        onCloseMobile();
+      }
+    };
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [mobileOpen, onCloseMobile]);
+
+  const renderSidebarBody = (isCollapsedDesktop = false, isMobile = false) => (
+    <div className="flex h-full flex-col justify-between bg-card text-ink p-3.5 select-none overflow-y-auto">
       <div>
         {/* Identidad */}
         <div
@@ -58,29 +80,33 @@ export default function Sidebar({
           </div>
 
           {/* Botón contraer en escritorio */}
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            title={isCollapsedDesktop ? "Expandir barra lateral" : "Contraer barra lateral"}
-            aria-label={isCollapsedDesktop ? "Expandir barra lateral" : "Contraer barra lateral"}
-            className="hidden lg:inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-ink hover:bg-muted cursor-pointer transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-primary"
-          >
-            {isCollapsedDesktop ? (
-              <PanelLeftOpen className="w-4 h-4" />
-            ) : (
-              <PanelLeftClose className="w-4 h-4" />
-            )}
-          </button>
+          {!isMobile && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              title={isCollapsedDesktop ? "Expandir barra lateral" : "Contraer barra lateral"}
+              aria-label={isCollapsedDesktop ? "Expandir barra lateral" : "Contraer barra lateral"}
+              className="hidden lg:inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-ink hover:bg-muted cursor-pointer transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-primary"
+            >
+              {isCollapsedDesktop ? (
+                <PanelLeftOpen className="w-4 h-4" />
+              ) : (
+                <PanelLeftClose className="w-4 h-4" />
+              )}
+            </button>
+          )}
 
-          {/* Botón cerrar en móvil */}
-          <button
-            type="button"
-            onClick={onCloseMobile}
-            className="lg:hidden inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:text-ink hover:bg-muted cursor-pointer focus-visible:outline-2 focus-visible:outline-primary"
-            aria-label="Cerrar menú"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {/* Botón cerrar en móvil con touch target cómodo */}
+          {isMobile && (
+            <button
+              type="button"
+              onClick={onCloseMobile}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:text-ink hover:bg-slate-100 cursor-pointer focus-visible:outline-2 focus-visible:outline-primary transition-colors"
+              aria-label="Cerrar menú"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         {/* Navegación */}
@@ -96,7 +122,9 @@ export default function Sidebar({
                 type="button"
                 onClick={() => {
                   onSelectTab(item.id);
-                  onCloseMobile();
+                  if (isMobile) {
+                    onCloseMobile();
+                  }
                 }}
                 title={isCollapsedDesktop ? item.label : undefined}
                 aria-current={isActive ? "page" : undefined}
@@ -143,8 +171,8 @@ export default function Sidebar({
         </nav>
       </div>
 
-      {/* Separador visual y estado discreto de conexiones */}
-      <div className="border-t border-border pt-3">
+      {/* Separador visual y estado de conexiones */}
+      <div className="border-t border-border pt-3 mt-4">
         {isCollapsedDesktop ? (
           <div className="flex flex-col items-center gap-3 py-1">
             <span
@@ -218,23 +246,33 @@ export default function Sidebar({
 
   return (
     <>
+      {/* Sidebar fijo en escritorio */}
       <aside
-        className={`hidden lg:block shrink-0 sticky top-0 h-screen border-r border-border z-sticky transition-[width] duration-200 motion-reduce:transition-none ${
+        className={`hidden lg:block shrink-0 sticky top-0 h-screen border-r border-border z-30 transition-[width] duration-200 motion-reduce:transition-none ${
           collapsed ? "w-[68px]" : "w-60"
         }`}
       >
-        {renderSidebarBody(collapsed)}
+        {renderSidebarBody(collapsed, false)}
       </aside>
 
+      {/* Drawer móvil con Backdrop accesible, z-50 y animación fluida */}
       {mobileOpen && (
-        <div className="lg:hidden fixed inset-0 z-modal flex">
+        <div
+          className="lg:hidden fixed inset-0 z-50 flex"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Menú de navegación"
+        >
+          {/* Backdrop desenfocado que cierra al hacer clic */}
           <div
-            className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs"
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity duration-200"
             onClick={onCloseMobile}
             aria-hidden="true"
           />
-          <div className="relative w-64 max-w-[85vw] h-full shadow-md border-r border-border z-modal">
-            {renderSidebarBody(false)}
+
+          {/* Panel lateral deslizante */}
+          <div className="relative w-72 max-w-[85vw] h-full bg-card shadow-2xl border-r border-border z-10 flex flex-col animate-in slide-in-from-left duration-200">
+            {renderSidebarBody(false, true)}
           </div>
         </div>
       )}

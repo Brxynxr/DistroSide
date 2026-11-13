@@ -14,18 +14,18 @@ from backend.snowflake_client import query_dicts
 from backend.sql_guard import validar_sql_solo_lectura
 
 ESQUEMA_AUTORIZADO = """
-Base de datos: DATAFINANCE (moneda: pesos colombianos, COP).
+Base de datos: DATAFINANCE (esquema consolidado: PUBLIC, moneda: pesos colombianos, COP).
 Empresa: Distribuidora del Caribe S.A.S. (Barranquilla, Colombia).
 
-Tablas y vistas autorizadas:
-1. DATAFINANCE.GOLD.KPI_MENSUAL (1 fila por mes):
+Tablas y vistas autorizadas (todas en DATAFINANCE.PUBLIC.*):
+1. DATAFINANCE.PUBLIC.KPI_MENSUAL (1 fila por mes):
    - MES (DATE), ANIO_MES ('YYYY-MM'), ANIO (NUMBER), NUMERO_MES (1..12)
    - TOTAL_TRANSACCIONES (NUMBER)
    - INGRESOS, GASTOS, UTILIDAD (NUMBER, en COP), MARGEN_PCT (NUMBER, %)
    - INGRESOS_MES_ANTERIOR, GASTOS_MES_ANTERIOR, UTILIDAD_MES_ANTERIOR
    - VAR_INGRESOS_ABS, VAR_INGRESOS_PCT, VAR_GASTOS_ABS, VAR_GASTOS_PCT, VAR_UTILIDAD_ABS, VAR_UTILIDAD_PCT
 
-2. DATAFINANCE.GOLD.KPI_CATEGORIA_MENSUAL (1 fila por mes, tipo, categoría):
+2. DATAFINANCE.PUBLIC.KPI_CATEGORIA_MENSUAL (1 fila por mes, tipo, categoría):
    - MES (DATE), ANIO_MES ('YYYY-MM'), ANIO, NUMERO_MES
    - TIPO ('INGRESO' o 'GASTO')
    - CATEGORIA:
@@ -33,21 +33,21 @@ Tablas y vistas autorizadas:
      * Gastos: 'PROVEEDORES', 'NOMINA', 'ARRIENDO', 'LOGISTICA', 'MARKETING', 'SERVICIOS PUBLICOS', 'IMPUESTOS'
    - TOTAL_TRANSACCIONES, MONTO_TOTAL, MONTO_MES_ANTERIOR, VAR_ABS, VAR_PCT
 
-3. DATAFINANCE.GOLD.KPI_AREA_MENSUAL (1 fila por mes, área, tipo):
+3. DATAFINANCE.PUBLIC.KPI_AREA_MENSUAL (1 fila por mes, área, tipo):
    - MES (DATE), ANIO_MES ('YYYY-MM'), ANIO, NUMERO_MES
    - AREA ('VENTAS', 'OPERACIONES', 'ADMINISTRACIÓN')
    - TIPO ('INGRESO' o 'GASTO')
    - TOTAL_TRANSACCIONES, MONTO_TOTAL, MONTO_MES_ANTERIOR, VAR_ABS, VAR_PCT
 
-4. DATAFINANCE.GOLD.ANOMALIAS:
+4. DATAFINANCE.PUBLIC.ANOMALIAS (alertas estadísticas con Z-Score >= 2.5):
    - MES (DATE), ANIO_MES, NIVEL ('CATEGORIA' o 'MENSUAL'), TIPO, CATEGORIA
    - VALOR_OBSERVADO, VALOR_ESPERADO, Z_SCORE, TIPO_ANOMALIA ('PICO_ATIPICO' o 'CAIDA_ATIPICA'), MOTIVO
 
-5. DATAFINANCE.SILVER.TRANSACCIONES (granularidad por transacción limpia):
+5. DATAFINANCE.PUBLIC.TRANSACCIONES (granularidad por transacción limpia individual):
    - ID_TRANSACCION, FECHA (DATE), ANIO, MES (DATE), ANIO_MES, TIPO, CATEGORIA, AREA, MONTO, DESCRIPCION
 
-6. DATAFINANCE.SILVER.TRANSACCIONES_RECHAZADOS (registros auditados no promovidos a Silver):
-   - ID_TRANSACCION, FECHA_ORIGINAL, TIPO, CATEGORIA, AREA, MONTO, DESCRIPCION, MOTIVO_RECHAZO, REGISTRADO_EN
+6. DATAFINANCE.PUBLIC.REPORTES (historial de informes ejecutivos):
+   - ID_REPORTE, GENERADO_EN, MODELO, PERIODO_DESDE, PERIODO_HASTA, RESUMEN_DATOS, REPORTE_TEXTO
 """
 
 
@@ -96,7 +96,7 @@ def _generar_sql_snowflake(
         f"{ESQUEMA_AUTORIZADO}\n"
         "Reglas estrictas:\n"
         "- Responde ÚNICAMENTE con un JSON válido de la forma {\"sql\": \"SELECT ...\"}.\n"
-        "- Usa solo tablas DATAFINANCE.GOLD.* o DATAFINANCE.SILVER.TRANSACCIONES.\n"
+        "- Usa solo tablas de DATAFINANCE.PUBLIC (ej. DATAFINANCE.PUBLIC.KPI_MENSUAL, DATAFINANCE.PUBLIC.TRANSACCIONES).\n"
         "- No uses comentarios SQL ni punto y coma final.\n"
         "- Para comparar periodos (ej. semestre 1 vs semestre 2), usa SUM() / IFF() / GROUP BY en SQL.\n"
         "- Para valores de texto (CATEGORIA, AREA, TIPO) usa MAYÚSCULAS exactas como en el esquema.\n"

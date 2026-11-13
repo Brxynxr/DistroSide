@@ -7,6 +7,7 @@ import queue
 import threading
 from datetime import date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import snowflake.connector
@@ -59,7 +60,7 @@ def get_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
         role=role,
         warehouse=os.getenv("SNOWFLAKE_WAREHOUSE", "WH_DATAFINANCE"),
         database=os.getenv("SNOWFLAKE_DATABASE", "DATAFINANCE"),
-        schema=os.getenv("SNOWFLAKE_SCHEMA", "GOLD"),
+        schema=os.getenv("SNOWFLAKE_SCHEMA", "PUBLIC"),
     )
 
 
@@ -136,3 +137,17 @@ def query_dicts(sql: str, params: tuple | list | None = None) -> tuple[list[str]
     except Exception:
         _release_connection(conn, broken=True)
         raise
+
+
+def execute_file_sql(path: str | Path) -> None:
+    """Ejecuta un archivo SQL con múltiples sentencias en Snowflake."""
+    p = Path(path)
+    if not p.is_file():
+        raise FileNotFoundError(f"No existe el archivo SQL: {path}")
+    sql_text = p.read_text(encoding="utf-8")
+    conn = get_snowflake_connection()
+    try:
+        conn.execute_string(sql_text)
+    finally:
+        conn.close()
+
