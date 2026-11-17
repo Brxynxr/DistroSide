@@ -78,3 +78,69 @@ Historial de reportes ejecutivos redactados por IA (`AI_AGG` o Groq):
 - `PERIODO_DESDE` / `PERIODO_HASTA`: Rango analizado.
 - `RESUMEN_DATOS`: Payload JSON con KPIs agregados.
 - `REPORTE_TEXTO`: Contenido redactado del informe ejecutivo disponible para exportación PDF en ReportLab.
+
+---
+
+## 6. Auditoría de Cierres Mensuales: `DATAFINANCE.PUBLIC.AUDITORIA_CIERRES`
+
+Bitácora y trazabilidad de los cierres mensuales automatizados:
+- `ID_CIERRE`: Identificador numérico autoincremental del cierre.
+- `MES_CERRADO`: Periodo cerrado en formato `YYYY-MM`.
+- `FECHA_EJECUCION`: Marca temporal exacta de la ejecución.
+- `ESTADO`: Estado del cierre (`EXITOSO`, `CON_ANOMALIAS`, `FALLIDO`).
+- `TOTAL_TRANSACCIONES`: Conteo de transacciones cerradas.
+- `INGRESOS` / `GASTOS` / `UTILIDAD`: Métricas financieras calculadas en COP.
+- `MARGEN_PCT`: Margen porcentual consolidado.
+- `TOTAL_ANOMALIAS`: Número de anomalías estadísticas detectadas en el periodo.
+- `ID_REPORTE`: Llave foránea hacia `PUBLIC.REPORTES`.
+- `NOMBRE_ARCHIVO_PDF`: Nombre del documento corporativo compilado (ej. `Executive_Pack_2026-10.pdf`).
+- `EJECUTADO_POR`: Origen del trigger (`AUTOMATION_SCHEDULER`, `MANUAL_CLI`, `UI_DASHBOARD`).
+- `MENSAJE`: Resumen de estado y observaciones de auditoría.
+
+---
+
+## 7. Alertas Preventivas del Centinela: `DATAFINANCE.PUBLIC.ALERTAS_CENTINELA`
+
+Registro de alertas tempranas de sobrecostos por ritmo de consumo acelerado (Run-rate):
+- `ID_ALERTA`: Identificador numérico de la alerta.
+- `FECHA_EVALUACION`: Marca temporal del análisis.
+- `PERIODO`: Periodo evaluado (`YYYY-MM`).
+- `FECHA_CORTE`: Día máximo de transacción analizado en el mes.
+- `DIAS_TRANSCURRIDOS` / `DIAS_TOTALES_MES`: Proporción temporal transcurrida.
+- `CATEGORIA` / `AREA`: Rubro y área operacional afectada.
+- `GASTO_ACUMULADO`: Monto gastado al corte (COP).
+- `PROMEDIO_HISTORICO_MENSUAL`: Presupuesto mensual de referencia histórica.
+- `PORCENTAJE_CONSUMIDO`: Porcentaje del presupuesto consumido a la fecha.
+- `PROYECCION_FIN_MES`: Proyección matemática lineal al cierre del mes.
+- `DESVIO_PROYECTADO_PCT`: Porcentaje de sobrecosto proyectado frente al presupuesto.
+- `NIVEL_RIESGO`: Nivel de severidad (`CRITICO`, `ALTO`, `MODERADO`).
+- `DIAGNOSTICO_IA`: Síntesis explicativa del desvío y medidas preventivas.
+- `TRANSACCIONES_CRITICAS`: Payload JSON con las transacciones más costosas causantes.
+- `ESTADO`: Estado de gestión de la alerta (`ACTIVA`, `MITIGADA`, `ARCHIVADA`).
+
+---
+
+## 8. Cuadre Diario de Ventas y Liquidez: `DATAFINANCE.PUBLIC.CUADRE_DIARIO_LIQUIDEZ`
+
+Bitácora diaria de recaudo comercial al cierre de ruta para monitorear liquidez inmediata (Contado vs. Crédito):
+- `ID_CUADRE`: Identificador autoincremental del cuadre diario.
+- `FECHA`: Fecha evaluada (`YYYY-MM-DD`).
+- `TOTAL_VENTAS`: Facturación total del día en COP.
+- `VENTAS_CONTADO`: Monto recaudado en efectivo y transferencias inmediatas (COP).
+- `VENTAS_CREDITO`: Facturación colocada a plazos a supermercados y tiendas aliadas (COP).
+- `SERVICIOS`: Ingresos complementarios de transporte o logística comercial (COP).
+- `RATIO_CONTADO_PCT`: Porcentaje de recaudo de contado sobre la venta total (`(VENTAS_CONTADO / TOTAL_VENTAS) * 100`).
+- `RATIO_CREDITO_PCT`: Porcentaje de colocación a crédito sobre la venta total (`(VENTAS_CREDITO / TOTAL_VENTAS) * 100`).
+- `ESTADO_LIQUIDEZ`: Clasificación prudencial de tesorería:
+  - `OPTIMA`: `RATIO_CONTADO_PCT >= 45.0%` (flujo suficiente para obligaciones operativas inmediatas).
+  - `ADVERTENCIA`: `35.0% <= RATIO_CONTADO_PCT < 45.0%` (menor velocidad de caja).
+  - `CRITICA`: `RATIO_CONTADO_PCT < 35.0%` (acumulación riesgosa de cartera por cobrar).
+- `TOTAL_TRANSACCIONES`: Número de ventas procesadas en el día.
+- `SINTESIS_TESORERIA`: Dictamen ejecutivo redactado por IA (Groq `openai/gpt-oss-120b` o fallback) para el comité de caja y cartera.
+- `REGISTRADO_EN`: Marca temporal de inserción.
+- `EJECUTADO_POR`: Identificador del disparador (`AUTOMATION_DAILY`, `MANUAL_CLI`, `UI_DASHBOARD`).
+
+### Vista Analítica: `DATAFINANCE.PUBLIC.V_CUADRE_DIARIO_CONSOLIDADO`
+Calcula dinámicamente sobre `DATAFINANCE.PUBLIC.TRANSACCIONES` la serie diaria de ventas, ratios y estados de liquidez para los 731 días históricos, sustentando las gráficas y comparativas de tesorería sin recalcular en la capa de presentación.
+
+

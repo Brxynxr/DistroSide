@@ -16,6 +16,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from backend.groq_analyst import redactar_resumen_filtrado, responder_pregunta_financiera
+from backend.monthly_closing import (
+    ejecutar_cierre_mensual,
+    listar_historial_cierres,
+    obtener_ruta_pdf_cierre,
+)
+from backend.weekly_sentinel import (
+    actualizar_estado_alerta,
+    evaluar_centinela_semanal,
+    listar_alertas_centinela,
+)
+from backend.daily_reconciliation import (
+    ejecutar_cuadre_diario,
+    listar_historial_cuadres,
+    obtener_tendencia_liquidez_diaria,
+    obtener_ultimo_cuadre,
+)
 from backend.report_pdf import generar_pdf_reporte
 from backend.snowflake_client import execute_file_sql, query_dicts
 
@@ -61,6 +77,28 @@ class DescargarPdfRequest(BaseModel):
     resumen_sql: dict[str, Any] | None = None
     por_categoria: list[dict[str, Any]] | None = None
     mensual: list[dict[str, Any]] | None = None
+
+
+class CierreMensualRequest(BaseModel):
+    mes: str | None = Field(default=None, description="Periodo YYYY-MM a cerrar (ej. 2026-10)")
+    forzar: bool = Field(default=False, description="Forzar reprocesamiento si ya está cerrado")
+    disparador: str = Field(default="API_DISPATCH", description="Identificador del disparador")
+
+
+class CentinelaEvaluarRequest(BaseModel):
+    mes: str | None = Field(default=None, description="Periodo YYYY-MM a evaluar (ej. 2026-08)")
+    persistir: bool = Field(default=True, description="Guardar alertas en Snowflake")
+
+
+class CuadreDiarioRequest(BaseModel):
+    fecha: str | None = Field(default=None, description="Fecha a evaluar en formato YYYY-MM-DD")
+    disparador: str = Field(default="API_TRIGGER", description="Identificador del originador")
+
+
+class ActualizarAlertaRequest(BaseModel):
+    estado: str = Field(..., description="Nuevo estado: ACTIVA, MITIGADA o ARCHIVADA")
+
+
 
 
 _CACHE_LOCK = threading.Lock()
@@ -670,3 +708,162 @@ def chat_financiero(req: ChatRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/automation/cierre-mensual")
+def disparar_cierre_mensual(req: CierreMensualRequest) -> dict[str, Any]:
+    """Ejecuta el Cierre Financiero Mensual Automatizado y la compilación del Executive Pack."""
+    try:
+        resultado = ejecutar_cierre_mensual(
+            mes=req.mes,
+            forzar=req.forzar,
+            disparador=req.disparador or "API_DISPATCH",
+        )
+        _cache_clear()  # Invalidar cachés de KPIs, reportes y filtros
+        return resultado
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error durante el cierre mensual automatizado: {exc}",
+        ) from exc
+
+
+@app.get("/api/automation/cierres")
+def listar_cierres(limite: int = Query(default=20, ge=1, le=100)) -> dict[str, Any]:
+    """Consulta la bitácora de cierres mensuales registrados en DATAFINANCE.PUBLIC.AUDITORIA_CIERRES."""
+    try:
+        cierres = listar_historial_cierres(limite=limite)
+        return {"cierres": cierres, "total": len(cierres)}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al consultar historial de cierres: {exc}",
+        ) from exc
+
+
+@app.get("/api/automation/cierres/{id_cierre}/descargar-pdf")
+def descargar_pdf_cierre_ejecutivo(id_cierre: int) -> Response:
+    """Descarga directamente el archivo PDF 'Executive Pack' asociado a un cierre mensual."""
+    ruta_pdf = obtener_ruta_pdf_cierre(id_cierre)
+    if ruta_pdf and ruta_pdf.is_file():
+        pdf_bytes = ruta_pdf.read_bytes()
+        filename = ruta_pdf.name
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition",
+            },
+        )
+
+    # Si no está en disco local, intenta descargarlo a través del reporte oficial de Snowflake
+    try:
+        _, rows = query_dicts(
+            "SELECT ID_REPORTE, MES_CERRADO FROM DATAFINANCE.PUBLIC.AUDITORIA_CIERRES WHERE ID_CIERRE = %s",
+            (id_cierre,),
+        )
+        if rows and rows[0].get("ID_REPORTE"):
+            return descargar_reporte_guardado_pdf(int(rows[0]["ID_REPORTE"]))
+    except Exception:
+        pass
+
+    raise HTTPException(
+        status_code=404,
+        detail=f"No se encontró el documento PDF para el cierre #{id_cierre}.",
+    )
+
+
+@app.get("/api/automation/centinela/alertas")
+def obtener_alertas_centinela(
+    limite: int = Query(default=20, ge=1, le=100),
+    solo_activas: bool = Query(default=False),
+) -> dict[str, Any]:
+    """Consulta la bitácora de alertas de sobrecosto del Centinela Semanal."""
+    try:
+        alertas = listar_alertas_centinela(limite=limite, solo_activas=solo_activas)
+        return {"alertas": alertas, "total": len(alertas)}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al consultar alertas del Centinela: {exc}",
+        ) from exc
+
+
+@app.post("/api/automation/centinela/evaluar")
+def disparar_evaluacion_centinela(req: CentinelaEvaluarRequest) -> dict[str, Any]:
+    """Ejecuta el escaneo de Run-Rate y proyecta sobrecostos preventivos con el Centinela."""
+    try:
+        resultado = evaluar_centinela_semanal(
+            mes=req.mes,
+            persistir=req.persistir,
+        )
+        return resultado
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error durante la evaluación del Centinela: {exc}",
+        ) from exc
+
+
+@app.put("/api/automation/centinela/alertas/{id_alerta}/estado")
+def actualizar_estado_alerta_centinela(id_alerta: int, req: ActualizarAlertaRequest) -> dict[str, Any]:
+    """Actualiza el estado de una alerta preventiva (ACTIVA, MITIGADA, ARCHIVADA)."""
+    try:
+        resultado = actualizar_estado_alerta(id_alerta, req.estado)
+        return resultado
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error actualizando estado de la alerta #{id_alerta}: {exc}",
+        ) from exc
+
+
+@app.get("/api/automation/cuadre-diario")
+def obtener_cuadre_diario(
+    limite: int = Query(default=15, ge=1, le=60),
+    dias_tendencia: int = Query(default=14, ge=5, le=90),
+) -> dict[str, Any]:
+    """Retorna el último cuadre diario, el historial reciente y la serie temporal de liquidez."""
+    try:
+        ultimo = obtener_ultimo_cuadre()
+        historial = listar_historial_cuadres(limite=limite)
+        tendencia = obtener_tendencia_liquidez_diaria(dias=dias_tendencia)
+        return {
+            "ultimo": ultimo,
+            "historial": historial,
+            "tendencia": tendencia,
+            "total_historial": len(historial),
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al obtener información de cuadre diario: {exc}",
+        ) from exc
+
+
+@app.post("/api/automation/cuadre-diario/ejecutar")
+def disparar_cuadre_diario(req: CuadreDiarioRequest) -> dict[str, Any]:
+    """Calcula y audita el recaudo diario, evaluando la liquidez contado vs crédito de forma idempotente."""
+    try:
+        resultado = ejecutar_cuadre_diario(
+            fecha=req.fecha,
+            disparador=req.disparador or "API_TRIGGER",
+        )
+        return resultado
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error durante el cuadre diario de liquidez: {exc}",
+        ) from exc
+
+
+

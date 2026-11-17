@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import os
 import queue
 import threading
@@ -61,7 +62,24 @@ def get_snowflake_connection() -> snowflake.connector.SnowflakeConnection:
         warehouse=os.getenv("SNOWFLAKE_WAREHOUSE", "WH_DATAFINANCE"),
         database=os.getenv("SNOWFLAKE_DATABASE", "DATAFINANCE"),
         schema=os.getenv("SNOWFLAKE_SCHEMA", "PUBLIC"),
+        enable_server_session_keep_alive_auto_detection=True,
     )
+
+
+def close_pool() -> None:
+    """Drena y cierra ordenadamente todas las conexiones activas del pool al finalizar el proceso."""
+    while True:
+        try:
+            conn = _pool.get_nowait()
+            try:
+                conn.close()
+            except Exception:
+                pass
+        except queue.Empty:
+            break
+
+
+atexit.register(close_pool)
 
 
 def _acquire_connection() -> snowflake.connector.SnowflakeConnection:
@@ -145,9 +163,32 @@ def execute_file_sql(path: str | Path) -> None:
     if not p.is_file():
         raise FileNotFoundError(f"No existe el archivo SQL: {path}")
     sql_text = p.read_text(encoding="utf-8")
+    execute_string_sql(sql_text)
+
+
+def execute_string_sql(sql_text: str) -> None:
+    """Ejecuta un bloque de múltiples sentencias SQL en Snowflake."""
     conn = get_snowflake_connection()
     try:
         conn.execute_string(sql_text)
     finally:
         conn.close()
+
+
+def execute_dml(sql: str, params: tuple | list | None = None) -> int:
+    """Ejecuta una sentencia DML individual (INSERT/UPDATE/DELETE) y retorna filas afectadas."""
+    conn = get_snowflake_connection()
+    try:
+        cur = conn.cursor()
+        try:
+            if params:
+                cur.execute(sql, params)
+            else:
+                cur.execute(sql)
+            return cur.rowcount if cur.rowcount is not None else 0
+        finally:
+            cur.close()
+    finally:
+        conn.close()
+
 

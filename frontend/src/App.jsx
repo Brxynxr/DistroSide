@@ -50,6 +50,21 @@ export default function App() {
   const [loadingReporte, setLoadingReporte] = useState(false);
   const [msgReporte, setMsgReporte] = useState("");
 
+  // Automatización Cierres Mensuales
+  const [cierres, setCierres] = useState([]);
+  const [loadingCierre, setLoadingCierre] = useState(false);
+  const [msgCierre, setMsgCierre] = useState("");
+
+  // Centinela Semanal de Sobrecostos Operativos
+  const [alertasCentinela, setAlertasCentinela] = useState([]);
+  const [loadingCentinela, setLoadingCentinela] = useState(false);
+  const [msgCentinela, setMsgCentinela] = useState("");
+
+  // Cuadre Diario de Ventas y Monitoreo de Liquidez
+  const [cuadreDiario, setCuadreDiario] = useState(null);
+  const [loadingCuadre, setLoadingCuadre] = useState(false);
+  const [msgCuadre, setMsgCuadre] = useState("");
+
   const cargarHealth = useCallback(async () => {
     try {
       const res = await fetch("/api/health");
@@ -88,10 +103,13 @@ export default function App() {
   const cargarSecundarios = useCallback(async (nocache = false) => {
     const qs = nocache ? "?nocache=true" : "";
     try {
-      const [resAnom, resAud, resRep] = await Promise.all([
+      const [resAnom, resAud, resRep, resCierres, resAlertas, resCuadre] = await Promise.all([
         fetch(`/api/anomalias${qs}`),
         fetch(`/api/auditoria${qs}`),
         fetch(`/api/reportes${qs}`),
+        fetch(`/api/automation/cierres${qs}`),
+        fetch(`/api/automation/centinela/alertas${qs}`),
+        fetch(`/api/automation/cuadre-diario${qs}`),
       ]);
       if (resAnom.ok) {
         const dataAnom = await resAnom.json();
@@ -101,6 +119,18 @@ export default function App() {
       if (resRep.ok) {
         const dataRep = await resRep.json();
         setReportes(dataRep.reportes || []);
+      }
+      if (resCierres.ok) {
+        const dataCierres = await resCierres.json();
+        setCierres(dataCierres.cierres || []);
+      }
+      if (resAlertas.ok) {
+        const dataAlertas = await resAlertas.json();
+        setAlertasCentinela(dataAlertas.alertas || []);
+      }
+      if (resCuadre.ok) {
+        const dataCuadre = await resCuadre.json();
+        setCuadreDiario(dataCuadre);
       }
     } catch {
       // Silenciado; la vista principal ya reporta estado de API
@@ -216,6 +246,115 @@ export default function App() {
       setMsgReporte(`Error al descargar PDF oficial: ${err.message}`);
     }
   };
+
+  const ejecutarCierre = async (mes, forzar) => {
+    setLoadingCierre(true);
+    setMsgCierre("");
+    try {
+      const res = await fetch("/api/automation/cierre-mensual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mes: mes || null, forzar, disparador: "UI_DASHBOARD" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Error al ejecutar el cierre mensual");
+      if (data.estado === "ALREADY_CLOSED") {
+        setMsgCierre(`ℹ️ ${data.mensaje}`);
+      } else {
+        setMsgCierre(`✅ Cierre de ${data.mes_cerrado} completado con éxito (${data.estado}). Executive Pack compilado.`);
+      }
+      await cargarSecundarios(true);
+      await cargarKpis(true);
+    } catch (err) {
+      setMsgCierre(`Error: ${err.message}`);
+    } finally {
+      setLoadingCierre(false);
+    }
+  };
+
+  const descargarPdfCierre = async (idCierre, nombrePdf) => {
+    try {
+      const res = await fetch(`/api/automation/cierres/${idCierre}/descargar-pdf`);
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || "Error al descargar el PDF del cierre");
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = nombrePdf || `Executive_Pack_${idCierre}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    } catch (err) {
+      setMsgCierre(`Error al descargar PDF del cierre: ${err.message}`);
+    }
+  };
+
+  const evaluarCentinela = async (mes) => {
+    setLoadingCentinela(true);
+    setMsgCentinela("");
+    try {
+      const res = await fetch("/api/automation/centinela/evaluar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mes: mes || null, persistir: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Error en la evaluación del Centinela");
+      setMsgCentinela(
+        data.total_alertas > 0
+          ? `⚠️ El Centinela detectó ${data.total_alertas} alerta(s) preventiva(s) en ${data.periodo}.`
+          : `✅ No se proyectan sobrecostos para el periodo ${data.periodo}. Categorías bajo control.`
+      );
+      await cargarSecundarios(true);
+    } catch (err) {
+      setMsgCentinela(`Error: ${err.message}`);
+    } finally {
+      setLoadingCentinela(false);
+    }
+  };
+
+  const cambiarEstadoAlertaCentinela = async (idAlerta, nuevoEstado) => {
+    try {
+      const res = await fetch(`/api/automation/centinela/alertas/${idAlerta}/estado`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estado: nuevoEstado }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.detail || "Error actualizando alerta");
+      }
+      await cargarSecundarios(true);
+    } catch (err) {
+      setMsgCentinela(`Error: ${err.message}`);
+    }
+  };
+
+  const ejecutarCuadre = async (fecha) => {
+    setLoadingCuadre(true);
+    setMsgCuadre("");
+    try {
+      const res = await fetch("/api/automation/cuadre-diario/ejecutar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fecha: fecha || null, disparador: "UI_DASHBOARD" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Error al ejecutar el cuadre diario");
+      setMsgCuadre(`✅ Cuadre de ventas del día ${data.fecha} auditado con éxito. Estado de liquidez: ${data.estado_liquidez}.`);
+      await cargarSecundarios(true);
+    } catch (err) {
+      setMsgCuadre(`Error: ${err.message}`);
+    } finally {
+      setLoadingCuadre(false);
+    }
+  };
+
+
 
   const generarReporteGroq = async () => {
     setLoadingReporte(true);
@@ -399,6 +538,15 @@ export default function App() {
               kpis={kpis}
               auditoria={auditoria}
               loading={loadingKpis}
+              alertasCentinela={alertasCentinela}
+              loadingCentinela={loadingCentinela}
+              msgCentinela={msgCentinela}
+              onEvaluarCentinela={evaluarCentinela}
+              onCambiarEstadoAlerta={cambiarEstadoAlertaCentinela}
+              cuadreDiario={cuadreDiario}
+              loadingCuadre={loadingCuadre}
+              msgCuadre={msgCuadre}
+              onEjecutarCuadre={ejecutarCuadre}
               onResetFiltros={limpiarFiltros}
             />
           )}
@@ -423,12 +571,17 @@ export default function App() {
               kpis={kpis}
               reporteGroq={reporteGroq}
               reportes={reportes}
+              cierres={cierres}
               loadingReporte={loadingReporte}
+              loadingCierre={loadingCierre}
               msgReporte={msgReporte}
+              msgCierre={msgCierre}
               onGenerarSnowflake={generarReporteSnowflake}
               onGenerarGroq={generarReporteGroq}
               onDescargarPdfBajoDemanda={descargarPdfBajoDemanda}
               onDescargarPdfOficial={descargarPdfOficial}
+              onEjecutarCierre={ejecutarCierre}
+              onDescargarPdfCierre={descargarPdfCierre}
             />
           )}
         </main>
